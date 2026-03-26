@@ -5,6 +5,7 @@ import {
   FolderIcon,
   GitPullRequestIcon,
   PlusIcon,
+  RefreshCwIcon,
   RocketIcon,
   SettingsIcon,
   SquarePenIcon,
@@ -34,6 +35,7 @@ import {
   ProjectId,
   ThreadId,
   type GitStatusResult,
+  type GitOpenPullRequestSummary,
   type ResolvedKeybindingsConfig,
 } from "@t3tools/contracts";
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -48,7 +50,12 @@ import { isLinuxPlatform, isMacPlatform, newCommandId, newProjectId } from "../l
 import { useStore } from "../store";
 import { shortcutLabelForCommand } from "../keybindings";
 import { derivePendingApprovals, derivePendingUserInputs } from "../session-logic";
-import { gitRemoveWorktreeMutationOptions, gitStatusQueryOptions } from "../lib/gitReactQuery";
+import {
+  gitOpenPullRequestsQueryOptions,
+  gitRemoveWorktreeMutationOptions,
+  gitStatusQueryOptions,
+  invalidateGitQueries,
+} from "../lib/gitReactQuery";
 import { serverConfigQueryOptions } from "../lib/serverReactQuery";
 import { readNativeApi } from "../nativeApi";
 import { useComposerDraftStore } from "../composerDraftStore";
@@ -91,6 +98,7 @@ import { formatWorktreePathForDisplay, getOrphanedWorktreePathForThread } from "
 import { isNonEmpty as isNonEmptyString } from "effect/String";
 import {
   getFallbackThreadIdAfterDelete,
+  filterVisibleExternalPullRequests,
   getVisibleThreadsForProject,
   resolveProjectStatusIndicator,
   resolveSidebarNewThreadEnvMode,
@@ -368,6 +376,7 @@ export default function Sidebar() {
   const toggleProject = useStore((store) => store.toggleProject);
   const reorderProjects = useStore((store) => store.reorderProjects);
   const clearComposerDraftForThread = useComposerDraftStore((store) => store.clearDraftThread);
+  const draftThreadsByThreadId = useComposerDraftStore((store) => store.draftThreadsByThreadId);
   const getDraftThreadByProjectId = useComposerDraftStore(
     (store) => store.getDraftThreadByProjectId,
   );
@@ -470,6 +479,66 @@ export default function Sidebar() {
     }
     return map;
   }, [threadGitStatusCwds, threadGitStatusQueries, threadGitTargets]);
+  const projectOpenPrQueries = useQueries({
+    queries: projects.map((project) => ({
+      ...gitOpenPullRequestsQueryOptions(project.cwd),
+      staleTime: 30_000,
+      refetchInterval: 60_000,
+    })),
+  });
+  const externalPullRequestsByProjectId = useMemo(() => {
+    const projectDraftBranches = new Map<ProjectId, Array<string | null>>();
+    for (const draftThread of Object.values(draftThreadsByThreadId)) {
+      const branches = projectDraftBranches.get(draftThread.projectId) ?? [];
+      branches.push(draftThread.branch ?? null);
+      projectDraftBranches.set(draftThread.projectId, branches);
+    }
+
+    const result = new Map<ProjectId, GitOpenPullRequestSummary[]>();
+    for (let index = 0; index < projects.length; index += 1) {
+      const project = projects[index];
+      if (!project) continue;
+      const pullRequests = projectOpenPrQueries[index]?.data?.pullRequests ?? [];
+      result.set(
+        project.id,
+        filterVisibleExternalPullRequests({
+          projectId: project.id,
+          pullRequests,
+          threads,
+          draftBranches: projectDraftBranches.get(project.id) ?? [],
+        }),
+      );
+    }
+    return result;
+  }, [draftThreadsByThreadId, projectOpenPrQueries, projects, threads]);
+  const externalPullRequestQueryStateByProjectId = useMemo(() => {
+    const result = new Map<
+      ProjectId,
+      { isFetching: boolean; isError: boolean; errorMessage: string | null }
+    >();
+    for (let index = 0; index < projects.length; index += 1) {
+      const project = projects[index];
+      const query = projectOpenPrQueries[index];
+      if (!project || !query) continue;
+      result.set(project.id, {
+        isFetching: query.isFetching,
+        isError: query.isError,
+        errorMessage: query.error instanceof Error ? query.error.message : null,
+      });
+    }
+    return result;
+  }, [projectOpenPrQueries, projects]);
+
+  const getExternalPullRequestErrorMessage = useCallback((errorMessage: string | null) => {
+    if (!errorMessage) return "Failed to load external PRs.";
+    if (errorMessage.includes("GitHub CLI (`gh`) is required")) {
+      return "GitHub CLI (`gh`) is not available on PATH.";
+    }
+    if (errorMessage.includes("GitHub CLI is not authenticated")) {
+      return "GitHub CLI is not authenticated. Run `gh auth login`.";
+    }
+    return errorMessage;
+  }, []);
 
   const openPrLink = useCallback((event: React.MouseEvent<HTMLElement>, prUrl: string) => {
     event.preventDefault();
@@ -492,6 +561,34 @@ export default function Sidebar() {
       });
     });
   }, []);
+
+  const prepareExternalPullRequestThread = useCallback(
+    async (input: { projectId: ProjectId; projectCwd: string; reference: string }) => {
+      const api = readNativeApi();
+      if (!api) return;
+
+      try {
+        const result = await api.git.preparePullRequestThread({
+          cwd: input.projectCwd,
+          reference: input.reference,
+          mode: "worktree",
+        });
+        await handleNewThread(input.projectId, {
+          branch: result.branch,
+          worktreePath: result.worktreePath,
+          envMode: result.worktreePath ? "worktree" : "local",
+        });
+        await invalidateGitQueries(queryClient);
+      } catch (error) {
+        toastManager.add({
+          type: "error",
+          title: "Unable to prepare pull request thread",
+          description: error instanceof Error ? error.message : "An error occurred.",
+        });
+      }
+    },
+    [handleNewThread, queryClient],
+  );
 
   const focusMostRecentThreadForProject = useCallback(
     (projectId: ProjectId) => {
@@ -1136,6 +1233,12 @@ export default function Sidebar() {
     });
     const orderedProjectThreadIds = projectThreads.map((thread) => thread.id);
     const renderedThreads = pinnedCollapsedThread ? [pinnedCollapsedThread] : visibleThreads;
+    const externalPullRequests = externalPullRequestsByProjectId.get(project.id) ?? [];
+    const externalPullRequestState = externalPullRequestQueryStateByProjectId.get(project.id) ?? {
+      isFetching: false,
+      isError: false,
+      errorMessage: null,
+    };
     const renderThreadRow = (thread: (typeof projectThreads)[number]) => {
       const isActive = routeThreadId === thread.id;
       const isSelected = selectedThreadIds.has(thread.id);
@@ -1287,6 +1390,55 @@ export default function Sidebar() {
         </SidebarMenuSubItem>
       );
     };
+    const renderExternalPullRequestRow = (pullRequest: GitOpenPullRequestSummary) => (
+      <SidebarMenuSubItem key={`external-pr-${pullRequest.number}`} className="w-full">
+        <SidebarMenuSubButton
+          render={<div role="button" tabIndex={0} />}
+          size="sm"
+          className="h-7 w-full translate-x-0 justify-start px-2 text-left text-muted-foreground hover:bg-accent hover:text-foreground"
+          onClick={() => {
+            void prepareExternalPullRequestThread({
+              projectId: project.id,
+              projectCwd: project.cwd,
+              reference: String(pullRequest.number),
+            });
+          }}
+          onKeyDown={(event) => {
+            if (event.key !== "Enter" && event.key !== " ") return;
+            event.preventDefault();
+            void prepareExternalPullRequestThread({
+              projectId: project.id,
+              projectCwd: project.cwd,
+              reference: String(pullRequest.number),
+            });
+          }}
+        >
+          <div className="flex min-w-0 flex-1 items-center gap-1.5 text-left">
+            <button
+              type="button"
+              aria-label={`Open PR #${pullRequest.number} on GitHub`}
+              className="inline-flex items-center justify-center text-emerald-600 dark:text-emerald-300/90"
+              onClick={(event) => {
+                openPrLink(event, pullRequest.url);
+              }}
+            >
+              <GitPullRequestIcon className="size-3" />
+            </button>
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-xs font-medium text-foreground/90">
+                {pullRequest.title}
+              </div>
+              <div className="truncate text-[10px] text-muted-foreground/65">
+                #{pullRequest.number} · {pullRequest.headBranch} · {pullRequest.authorLogin}
+              </div>
+            </div>
+          </div>
+          <span className="ml-auto shrink-0 text-[10px] text-muted-foreground/50">
+            {formatRelativeTime(pullRequest.updatedAt)}
+          </span>
+        </SidebarMenuSubButton>
+      </SidebarMenuSubItem>
+    );
 
     return (
       <Collapsible className="group/collapsible" open={shouldShowThreadPanel}>
@@ -1407,6 +1559,46 @@ export default function Sidebar() {
                 </SidebarMenuSubButton>
               </SidebarMenuSubItem>
             )}
+            {project.expanded &&
+            (externalPullRequests.length > 0 || externalPullRequestState.isError) ? (
+              <>
+                <SidebarMenuSubItem className="w-full">
+                  <div className="flex h-6 items-center gap-2 px-2 text-[10px] uppercase tracking-[0.12em] text-muted-foreground/55">
+                    <span className="truncate">External PRs</span>
+                    <button
+                      type="button"
+                      aria-label={`Refresh external pull requests for ${project.name}`}
+                      className="ml-auto inline-flex items-center justify-center rounded-sm p-0.5 text-muted-foreground/60 hover:bg-accent hover:text-foreground"
+                      onClick={() => {
+                        void queryClient.invalidateQueries({
+                          queryKey: ["git", "open-pull-requests", project.cwd],
+                        });
+                      }}
+                    >
+                      <RefreshCwIcon
+                        className={`size-3 ${externalPullRequestState.isFetching ? "animate-spin" : ""}`}
+                      />
+                    </button>
+                  </div>
+                </SidebarMenuSubItem>
+                {externalPullRequestState.isError ? (
+                  <SidebarMenuSubItem className="w-full">
+                    <div
+                      className="px-2 text-[10px] text-muted-foreground/55"
+                      title={getExternalPullRequestErrorMessage(
+                        externalPullRequestState.errorMessage,
+                      )}
+                    >
+                      {getExternalPullRequestErrorMessage(externalPullRequestState.errorMessage)}
+                    </div>
+                  </SidebarMenuSubItem>
+                ) : (
+                  externalPullRequests.map((pullRequest) =>
+                    renderExternalPullRequestRow(pullRequest),
+                  )
+                )}
+              </>
+            ) : null}
           </SidebarMenuSub>
         </CollapsibleContent>
       </Collapsible>

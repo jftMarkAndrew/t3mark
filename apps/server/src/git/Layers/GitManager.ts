@@ -2,7 +2,12 @@ import { randomUUID } from "node:crypto";
 import { realpathSync } from "node:fs";
 
 import { Effect, FileSystem, Layer, Path } from "effect";
-import { GitActionProgressEvent, GitActionProgressPhase, ModelSelection } from "@t3tools/contracts";
+import {
+  GitActionProgressEvent,
+  GitActionProgressPhase,
+  ModelSelection,
+  type GitOpenPullRequestSummary,
+} from "@t3tools/contracts";
 import {
   resolveAutoFeatureBranchName,
   sanitizeBranchFragment,
@@ -32,6 +37,9 @@ interface OpenPrInfo {
   url: string;
   baseRefName: string;
   headRefName: string;
+  authorLogin?: string | null;
+  authorDisplayName?: string | null;
+  updatedAt?: string | null;
 }
 
 interface PullRequestInfo extends OpenPrInfo {
@@ -298,6 +306,22 @@ function toStatusPr(pr: PullRequestInfo): {
     baseBranch: pr.baseRefName,
     headBranch: pr.headRefName,
     state: pr.state,
+  };
+}
+
+function toOpenPullRequestSummary(
+  pr: OpenPrInfo & { state?: "open" | "closed" | "merged" },
+): GitOpenPullRequestSummary {
+  return {
+    number: pr.number,
+    title: pr.title,
+    url: pr.url,
+    baseBranch: pr.baseRefName,
+    headBranch: pr.headRefName,
+    authorLogin: pr.authorLogin ?? "unknown",
+    authorDisplayName: pr.authorDisplayName ?? null,
+    state: pr.state ?? "open",
+    updatedAt: pr.updatedAt ?? new Date(0).toISOString(),
   };
 }
 
@@ -1103,6 +1127,18 @@ export const makeGitManager = Effect.gen(function* () {
     },
   );
 
+  const listOpenPullRequests: GitManagerShape["listOpenPullRequests"] = Effect.fnUntraced(
+    function* (input) {
+      const pullRequests = yield* gitHubCli.listRepositoryPullRequests({
+        cwd: input.cwd,
+        limit: 100,
+      });
+      return {
+        pullRequests: pullRequests.map(toOpenPullRequestSummary),
+      };
+    },
+  );
+
   const runFeatureBranchStep = (
     modelSelection: ModelSelection,
     cwd: string,
@@ -1284,6 +1320,7 @@ export const makeGitManager = Effect.gen(function* () {
     status,
     resolvePullRequest,
     preparePullRequestThread,
+    listOpenPullRequests,
     runStackedAction,
   } satisfies GitManagerShape;
 });

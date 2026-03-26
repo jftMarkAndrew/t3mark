@@ -90,17 +90,26 @@ const RawGitHubPullRequestSchema = Schema.Struct({
   headRepository: Schema.optional(
     Schema.NullOr(
       Schema.Struct({
-        nameWithOwner: Schema.String,
+        nameWithOwner: Schema.optional(Schema.String),
       }),
     ),
   ),
   headRepositoryOwner: Schema.optional(
     Schema.NullOr(
       Schema.Struct({
-        login: Schema.String,
+        login: Schema.optional(Schema.String),
       }),
     ),
   ),
+  author: Schema.optional(
+    Schema.NullOr(
+      Schema.Struct({
+        login: Schema.String,
+        name: Schema.optional(Schema.NullOr(Schema.String)),
+      }),
+    ),
+  ),
+  updatedAt: Schema.optional(Schema.NullOr(Schema.String)),
 });
 
 const RawGitHubRepositoryCloneUrlsSchema = Schema.Struct({
@@ -124,7 +133,10 @@ function normalizePullRequestSummary(
     url: raw.url,
     baseRefName: raw.baseRefName,
     headRefName: raw.headRefName,
+    ...(raw.author?.login ? { authorLogin: raw.author.login } : {}),
+    ...(raw.author?.name ? { authorDisplayName: raw.author.name } : {}),
     state: normalizePullRequestState(raw),
+    ...(raw.updatedAt ? { updatedAt: raw.updatedAt } : {}),
     ...(typeof raw.isCrossRepository === "boolean"
       ? { isCrossRepository: raw.isCrossRepository }
       : {}),
@@ -146,7 +158,11 @@ function normalizeRepositoryCloneUrls(
 function decodeGitHubJson<S extends Schema.Top>(
   raw: string,
   schema: S,
-  operation: "listOpenPullRequests" | "getPullRequest" | "getRepositoryCloneUrls",
+  operation:
+    | "listOpenPullRequests"
+    | "listRepositoryPullRequests"
+    | "getPullRequest"
+    | "getRepositoryCloneUrls",
   invalidDetail: string,
 ): Effect.Effect<S["Type"], GitHubCliError, S["DecodingServices"]> {
   return Schema.decodeEffect(Schema.fromJsonString(schema))(raw).pipe(
@@ -187,7 +203,7 @@ const makeGitHubCli = Effect.sync(() => {
           "--limit",
           String(input.limit ?? 1),
           "--json",
-          "number,title,url,baseRefName,headRefName",
+          "number,title,url,baseRefName,headRefName,author,updatedAt",
         ],
       }).pipe(
         Effect.map((result) => result.stdout.trim()),
@@ -199,6 +215,33 @@ const makeGitHubCli = Effect.sync(() => {
                 Schema.Array(RawGitHubPullRequestSchema),
                 "listOpenPullRequests",
                 "GitHub CLI returned invalid PR list JSON.",
+              ),
+        ),
+        Effect.map((pullRequests) => pullRequests.map(normalizePullRequestSummary)),
+      ),
+    listRepositoryPullRequests: (input) =>
+      execute({
+        cwd: input.cwd,
+        args: [
+          "pr",
+          "list",
+          "--state",
+          "open",
+          "--limit",
+          String(input.limit ?? 100),
+          "--json",
+          "number,title,url,baseRefName,headRefName,state,mergedAt,isCrossRepository,headRepository,headRepositoryOwner,author,updatedAt",
+        ],
+      }).pipe(
+        Effect.map((result) => result.stdout.trim()),
+        Effect.flatMap((raw) =>
+          raw.length === 0
+            ? Effect.succeed([])
+            : decodeGitHubJson(
+                raw,
+                Schema.Array(RawGitHubPullRequestSchema),
+                "listRepositoryPullRequests",
+                "GitHub CLI returned invalid repository pull request list JSON.",
               ),
         ),
         Effect.map((pullRequests) => pullRequests.map(normalizePullRequestSummary)),

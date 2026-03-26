@@ -1,4 +1,5 @@
 import type { SidebarProjectSortOrder, SidebarThreadSortOrder } from "@t3tools/contracts/settings";
+import type { GitOpenPullRequestSummary, ProjectId } from "@t3tools/contracts";
 import type { Thread } from "../types";
 import { cn } from "../lib/utils";
 import {
@@ -16,6 +17,7 @@ type SidebarProject = {
   updatedAt?: string | undefined;
 };
 type SidebarThreadSortInput = Pick<Thread, "createdAt" | "updatedAt" | "messages">;
+type ExternalPullRequestDedupeThread = Pick<Thread, "projectId" | "branch">;
 
 export interface ThreadStatusPill {
   label:
@@ -228,6 +230,25 @@ export function getVisibleThreadsForProject(input: {
     hasHiddenThreads: true,
     visibleThreads: threads.filter((thread) => visibleThreadIds.has(thread.id)),
   };
+}
+
+export function filterVisibleExternalPullRequests(input: {
+  projectId: ProjectId;
+  pullRequests: ReadonlyArray<GitOpenPullRequestSummary>;
+  threads: ReadonlyArray<ExternalPullRequestDedupeThread>;
+  draftBranches: ReadonlyArray<string | null>;
+}): GitOpenPullRequestSummary[] {
+  const claimedBranches = new Set<string>();
+  for (const thread of input.threads) {
+    if (thread.projectId !== input.projectId || !thread.branch) continue;
+    claimedBranches.add(thread.branch);
+  }
+  for (const branch of input.draftBranches) {
+    if (!branch) continue;
+    claimedBranches.add(branch);
+  }
+
+  return input.pullRequests.filter((pullRequest) => !claimedBranches.has(pullRequest.headBranch));
 }
 
 function toSortableTimestamp(iso: string | undefined): number | null {

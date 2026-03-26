@@ -6,11 +6,14 @@ const GIT_STATUS_STALE_TIME_MS = 5_000;
 const GIT_STATUS_REFETCH_INTERVAL_MS = 15_000;
 const GIT_BRANCHES_STALE_TIME_MS = 15_000;
 const GIT_BRANCHES_REFETCH_INTERVAL_MS = 60_000;
+const GIT_OPEN_PRS_STALE_TIME_MS = 30_000;
+const GIT_OPEN_PRS_REFETCH_INTERVAL_MS = 60_000;
 
 export const gitQueryKeys = {
   all: ["git"] as const,
   status: (cwd: string | null) => ["git", "status", cwd] as const,
   branches: (cwd: string | null) => ["git", "branches", cwd] as const,
+  openPullRequests: (cwd: string | null) => ["git", "open-pull-requests", cwd] as const,
 };
 
 export const gitMutationKeys = {
@@ -55,6 +58,22 @@ export function gitBranchesQueryOptions(cwd: string | null) {
     refetchOnWindowFocus: true,
     refetchOnReconnect: true,
     refetchInterval: GIT_BRANCHES_REFETCH_INTERVAL_MS,
+  });
+}
+
+export function gitOpenPullRequestsQueryOptions(cwd: string | null) {
+  return queryOptions({
+    queryKey: gitQueryKeys.openPullRequests(cwd),
+    queryFn: async () => {
+      const api = ensureNativeApi();
+      if (!cwd) throw new Error("Open pull requests are unavailable.");
+      return api.git.listOpenPullRequests({ cwd });
+    },
+    enabled: cwd !== null,
+    staleTime: GIT_OPEN_PRS_STALE_TIME_MS,
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
+    refetchInterval: GIT_OPEN_PRS_REFETCH_INTERVAL_MS,
   });
 }
 

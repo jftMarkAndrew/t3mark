@@ -1,5 +1,5 @@
 import { Schema } from "effect";
-import { NonNegativeInt, PositiveInt, TrimmedNonEmptyString } from "./baseSchemas";
+import { IsoDateTime, NonNegativeInt, PositiveInt, TrimmedNonEmptyString } from "./baseSchemas";
 
 const TrimmedNonEmptyStringSchema = TrimmedNonEmptyString;
 
@@ -58,6 +58,19 @@ const GitResolvedPullRequest = Schema.Struct({
 });
 export type GitResolvedPullRequest = typeof GitResolvedPullRequest.Type;
 
+export const GitOpenPullRequestSummary = Schema.Struct({
+  number: PositiveInt,
+  title: TrimmedNonEmptyStringSchema,
+  url: Schema.String,
+  baseBranch: TrimmedNonEmptyStringSchema,
+  headBranch: TrimmedNonEmptyStringSchema,
+  authorLogin: TrimmedNonEmptyStringSchema,
+  authorDisplayName: Schema.NullOr(TrimmedNonEmptyStringSchema),
+  state: GitPullRequestState,
+  updatedAt: IsoDateTime,
+});
+export type GitOpenPullRequestSummary = typeof GitOpenPullRequestSummary.Type;
+
 // RPC Inputs
 
 export const GitStatusInput = Schema.Struct({
@@ -107,6 +120,11 @@ export const GitPreparePullRequestThreadInput = Schema.Struct({
   mode: GitPreparePullRequestThreadMode,
 });
 export type GitPreparePullRequestThreadInput = typeof GitPreparePullRequestThreadInput.Type;
+
+export const GitListOpenPullRequestsInput = Schema.Struct({
+  cwd: TrimmedNonEmptyStringSchema,
+});
+export type GitListOpenPullRequestsInput = typeof GitListOpenPullRequestsInput.Type;
 
 export const GitRemoveWorktreeInput = Schema.Struct({
   cwd: TrimmedNonEmptyStringSchema,
@@ -187,6 +205,11 @@ export const GitPreparePullRequestThreadResult = Schema.Struct({
   worktreePath: TrimmedNonEmptyStringSchema.pipe(Schema.NullOr),
 });
 export type GitPreparePullRequestThreadResult = typeof GitPreparePullRequestThreadResult.Type;
+
+export const GitListOpenPullRequestsResult = Schema.Struct({
+  pullRequests: Schema.Array(GitOpenPullRequestSummary),
+});
+export type GitListOpenPullRequestsResult = typeof GitListOpenPullRequestsResult.Type;
 
 export const GitRunStackedActionResult = Schema.Struct({
   action: GitStackedAction,

@@ -1753,6 +1753,7 @@ describe("WebSocket Server", () => {
       status,
       resolvePullRequest,
       preparePullRequestThread,
+      listOpenPullRequests: vi.fn(() => Effect.succeed({ pullRequests: [] })),
       runStackedAction,
     };
 
@@ -1792,6 +1793,7 @@ describe("WebSocket Server", () => {
       status: vi.fn(() => Effect.void as any),
       resolvePullRequest: vi.fn(() => Effect.succeed(resolvePullRequestResult)),
       preparePullRequestThread: vi.fn(() => Effect.succeed(preparePullRequestThreadResult)),
+      listOpenPullRequests: vi.fn(() => Effect.succeed({ pullRequests: [] })),
       runStackedAction: vi.fn(() => Effect.void as any),
     };
 
@@ -1840,6 +1842,7 @@ describe("WebSocket Server", () => {
       status: vi.fn(() => Effect.void as any),
       resolvePullRequest: vi.fn(() => Effect.void as any),
       preparePullRequestThread: vi.fn(() => Effect.void as any),
+      listOpenPullRequests: vi.fn(() => Effect.succeed({ pullRequests: [] })),
       runStackedAction,
     };
 
@@ -1874,6 +1877,47 @@ describe("WebSocket Server", () => {
     );
   });
 
+  it("supports git.listOpenPullRequests over websocket", async () => {
+    const pullRequestsResult = {
+      pullRequests: [
+        {
+          number: 42,
+          title: "PR thread flow",
+          url: "https://github.com/pingdotgg/codething-mvp/pull/42",
+          baseBranch: "main",
+          headBranch: "feature/pr-threads",
+          authorLogin: "propupgenie",
+          authorDisplayName: "PropUp Genie",
+          state: "open" as const,
+          updatedAt: "2026-03-27T10:15:00.000Z",
+        },
+      ],
+    };
+
+    const listOpenPullRequests = vi.fn(() => Effect.succeed(pullRequestsResult));
+    const gitManager: GitManagerShape = {
+      status: vi.fn(() => Effect.void as any),
+      resolvePullRequest: vi.fn(() => Effect.void as any),
+      preparePullRequestThread: vi.fn(() => Effect.void as any),
+      listOpenPullRequests,
+      runStackedAction: vi.fn(() => Effect.void as any),
+    };
+
+    server = await createTestServer({ cwd: "/test", gitManager });
+    const addr = server.address();
+    const port = typeof addr === "object" && addr !== null ? addr.port : 0;
+
+    const [ws] = await connectAndAwaitWelcome(port);
+    connections.push(ws);
+
+    const response = await sendRequest(ws, WS_METHODS.gitListOpenPullRequests, {
+      cwd: "/test",
+    });
+    expect(response.error).toBeUndefined();
+    expect(response.result).toEqual(pullRequestsResult);
+    expect(listOpenPullRequests).toHaveBeenCalledWith({ cwd: "/test" });
+  });
+
   it("publishes git action progress only to the initiating websocket", async () => {
     const runStackedAction = vi.fn(
       (_input, options) =>
@@ -1906,6 +1950,7 @@ describe("WebSocket Server", () => {
       status: vi.fn(() => Effect.void as any),
       resolvePullRequest: vi.fn(() => Effect.void as any),
       preparePullRequestThread: vi.fn(() => Effect.void as any),
+      listOpenPullRequests: vi.fn(() => Effect.succeed({ pullRequests: [] })),
       runStackedAction,
     };
 

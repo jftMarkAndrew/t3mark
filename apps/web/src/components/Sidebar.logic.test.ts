@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  filterVisibleExternalPullRequests,
   getFallbackThreadIdAfterDelete,
   getVisibleThreadsForProject,
   getProjectSortTimestamp,
@@ -340,6 +341,62 @@ describe("getVisibleThreadsForProject", () => {
     expect(result.visibleThreads.map((thread) => thread.id)).toEqual(
       threads.map((thread) => thread.id),
     );
+  });
+});
+
+describe("filterVisibleExternalPullRequests", () => {
+  it("hides external PRs already represented by local threads or draft branches", () => {
+    const visible = filterVisibleExternalPullRequests({
+      projectId: ProjectId.makeUnsafe("project-1"),
+      pullRequests: [
+        {
+          number: 1,
+          title: "Keep me",
+          url: "https://example.com/pr/1",
+          baseBranch: "main",
+          headBranch: "feature/keep-me",
+          authorLogin: "genie",
+          authorDisplayName: "Genie",
+          state: "open",
+          updatedAt: "2026-03-27T10:15:00.000Z",
+        },
+        {
+          number: 2,
+          title: "Already local",
+          url: "https://example.com/pr/2",
+          baseBranch: "main",
+          headBranch: "feature/already-local",
+          authorLogin: "genie",
+          authorDisplayName: "Genie",
+          state: "open",
+          updatedAt: "2026-03-27T10:15:00.000Z",
+        },
+        {
+          number: 3,
+          title: "Already draft",
+          url: "https://example.com/pr/3",
+          baseBranch: "main",
+          headBranch: "feature/already-draft",
+          authorLogin: "genie",
+          authorDisplayName: "Genie",
+          state: "open",
+          updatedAt: "2026-03-27T10:15:00.000Z",
+        },
+      ],
+      threads: [
+        makeThread({
+          projectId: ProjectId.makeUnsafe("project-1"),
+          branch: "feature/already-local",
+        }),
+        makeThread({
+          projectId: ProjectId.makeUnsafe("project-2"),
+          branch: "feature/already-draft",
+        }),
+      ],
+      draftBranches: ["feature/already-draft"],
+    });
+
+    expect(visible.map((pullRequest) => pullRequest.number)).toEqual([1]);
   });
 });
 
