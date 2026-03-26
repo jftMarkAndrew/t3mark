@@ -22,7 +22,9 @@ import {
 } from "~/lib/projectScriptKeybindings";
 import {
   commandForProjectScript,
+  DEFAULT_LOCALHOST_BASE_PORT,
   nextProjectScriptId,
+  projectScriptContainsPortPlaceholder,
   primaryProjectScript,
 } from "~/projectScripts";
 import { shortcutLabelForCommand } from "~/keybindings";
@@ -83,6 +85,8 @@ export interface NewProjectScriptInput {
   command: string;
   icon: ProjectScriptIcon;
   runOnWorktreeCreate: boolean;
+  runAsLocalhostLauncher: boolean;
+  localhostBasePort: number | null;
   keybinding: string | null;
 }
 
@@ -164,6 +168,8 @@ export default function ProjectScriptsControl({
   const [icon, setIcon] = useState<ProjectScriptIcon>("play");
   const [iconPickerOpen, setIconPickerOpen] = useState(false);
   const [runOnWorktreeCreate, setRunOnWorktreeCreate] = useState(false);
+  const [runAsLocalhostLauncher, setRunAsLocalhostLauncher] = useState(false);
+  const [localhostBasePort, setLocalhostBasePort] = useState(String(DEFAULT_LOCALHOST_BASE_PORT));
   const [keybinding, setKeybinding] = useState("");
   const [validationError, setValidationError] = useState<string | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
@@ -203,6 +209,20 @@ export default function ProjectScriptsControl({
       setValidationError("Command is required.");
       return;
     }
+    const parsedLocalhostBasePort = runAsLocalhostLauncher
+      ? Number.parseInt(localhostBasePort, 10)
+      : null;
+    if (runAsLocalhostLauncher && !projectScriptContainsPortPlaceholder(trimmedCommand)) {
+      setValidationError('Localhost launcher commands must include "{{port}}".');
+      return;
+    }
+    if (
+      runAsLocalhostLauncher &&
+      (!Number.isInteger(parsedLocalhostBasePort) || (parsedLocalhostBasePort ?? 0) < 0)
+    ) {
+      setValidationError("Base port must be an integer greater than or equal to 0.");
+      return;
+    }
 
     setValidationError(null);
     try {
@@ -221,6 +241,8 @@ export default function ProjectScriptsControl({
         command: trimmedCommand,
         icon,
         runOnWorktreeCreate,
+        runAsLocalhostLauncher,
+        localhostBasePort: runAsLocalhostLauncher ? parsedLocalhostBasePort : null,
         keybinding: keybindingRule?.key ?? null,
       } satisfies NewProjectScriptInput;
       if (editingScriptId) {
@@ -242,6 +264,8 @@ export default function ProjectScriptsControl({
     setIcon("play");
     setIconPickerOpen(false);
     setRunOnWorktreeCreate(false);
+    setRunAsLocalhostLauncher(false);
+    setLocalhostBasePort(String(DEFAULT_LOCALHOST_BASE_PORT));
     setKeybinding("");
     setValidationError(null);
     setDialogOpen(true);
@@ -254,6 +278,8 @@ export default function ProjectScriptsControl({
     setIcon(script.icon);
     setIconPickerOpen(false);
     setRunOnWorktreeCreate(script.runOnWorktreeCreate);
+    setRunAsLocalhostLauncher(script.runAsLocalhostLauncher ?? false);
+    setLocalhostBasePort(String(script.localhostBasePort ?? DEFAULT_LOCALHOST_BASE_PORT));
     setKeybinding(keybindingValueForCommand(keybindings, commandForProjectScript(script.id)) ?? "");
     setValidationError(null);
     setDialogOpen(true);
@@ -302,7 +328,11 @@ export default function ProjectScriptsControl({
                   >
                     <ScriptIcon icon={script.icon} className="size-4" />
                     <span className="truncate">
-                      {script.runOnWorktreeCreate ? `${script.name} (setup)` : script.name}
+                      {script.runOnWorktreeCreate
+                        ? `${script.name} (setup)`
+                        : script.runAsLocalhostLauncher
+                          ? `${script.name} (localhost)`
+                          : script.name}
                     </span>
                     <span className="relative ms-auto flex h-6 min-w-6 items-center justify-end">
                       {shortcutLabel && (
@@ -362,6 +392,8 @@ export default function ProjectScriptsControl({
           setCommand("");
           setIcon("play");
           setRunOnWorktreeCreate(false);
+          setRunAsLocalhostLauncher(false);
+          setLocalhostBasePort(String(DEFAULT_LOCALHOST_BASE_PORT));
           setKeybinding("");
           setValidationError(null);
         }}
@@ -456,6 +488,29 @@ export default function ProjectScriptsControl({
                   onCheckedChange={(checked) => setRunOnWorktreeCreate(Boolean(checked))}
                 />
               </label>
+              <label className="flex items-center justify-between gap-3 rounded-md border border-border/70 px-3 py-2 text-sm">
+                <span>Use as localhost launcher</span>
+                <Switch
+                  checked={runAsLocalhostLauncher}
+                  onCheckedChange={(checked) => setRunAsLocalhostLauncher(Boolean(checked))}
+                />
+              </label>
+              {runAsLocalhostLauncher ? (
+                <div className="space-y-1.5">
+                  <Label htmlFor="script-localhost-base-port">Base port</Label>
+                  <Input
+                    id="script-localhost-base-port"
+                    inputMode="numeric"
+                    placeholder={String(DEFAULT_LOCALHOST_BASE_PORT)}
+                    value={localhostBasePort}
+                    onChange={(event) => setLocalhostBasePort(event.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Include <code>{"{{port}}"}</code> in the command, for example{" "}
+                    <code>npm run dev -- --port {"{{port}}"}</code>.
+                  </p>
+                </div>
+              ) : null}
               {validationError && <p className="text-sm text-destructive">{validationError}</p>}
             </form>
           </DialogPanel>

@@ -16,6 +16,7 @@ import {
   requireNonNegativeInteger,
   requireThread,
   requireThreadAbsent,
+  requireValidProjectScripts,
 } from "./commandInvariants.ts";
 
 const now = new Date().toISOString();
@@ -214,5 +215,54 @@ describe("commandInvariants", () => {
         }),
       ),
     ).rejects.toThrow("greater than or equal to 0");
+  });
+
+  it("rejects invalid localhost launcher project scripts", async () => {
+    await expect(
+      Effect.runPromise(
+        requireValidProjectScripts({
+          commandType: "project.meta.update",
+          scripts: [
+            {
+              id: "dev",
+              name: "Dev",
+              command: "npm run dev",
+              icon: "play",
+              runOnWorktreeCreate: false,
+              runAsLocalhostLauncher: true,
+              localhostBasePort: 4200,
+            },
+          ],
+        }),
+      ),
+    ).rejects.toThrow("must include '{{port}}'");
+
+    await expect(
+      Effect.runPromise(
+        requireValidProjectScripts({
+          commandType: "project.meta.update",
+          scripts: [
+            {
+              id: "dev-1",
+              name: "Dev 1",
+              command: "npm run dev -- --port {{port}}",
+              icon: "play",
+              runOnWorktreeCreate: false,
+              runAsLocalhostLauncher: true,
+              localhostBasePort: 4200,
+            },
+            {
+              id: "dev-2",
+              name: "Dev 2",
+              command: "npm run dev -- --port {{port}}",
+              icon: "play",
+              runOnWorktreeCreate: false,
+              runAsLocalhostLauncher: true,
+              localhostBasePort: 4201,
+            },
+          ],
+        }),
+      ),
+    ).rejects.toThrow("Only one localhost launcher action");
   });
 });

@@ -7,6 +7,7 @@ import { Effect } from "effect";
 
 import { OrchestrationCommandInvariantError } from "./Errors.ts";
 import {
+  requireValidProjectScripts,
   requireProject,
   requireProjectAbsent,
   requireThread,
@@ -90,6 +91,12 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         projectId: command.projectId,
       });
+      if (command.scripts !== undefined) {
+        yield* requireValidProjectScripts({
+          commandType: command.type,
+          scripts: command.scripts,
+        });
+      }
       const occurredAt = nowIso();
       return {
         ...withEventBase({
@@ -162,6 +169,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           interactionMode: command.interactionMode,
           branch: command.branch,
           worktreePath: command.worktreePath,
+          devServerPort: command.devServerPort ?? null,
           createdAt: command.createdAt,
           updatedAt: command.createdAt,
         },
@@ -213,6 +221,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
             : {}),
           ...(command.branch !== undefined ? { branch: command.branch } : {}),
           ...(command.worktreePath !== undefined ? { worktreePath: command.worktreePath } : {}),
+          ...(command.devServerPort !== undefined ? { devServerPort: command.devServerPort } : {}),
           updatedAt: occurredAt,
         },
       };

@@ -3,6 +3,7 @@ import type {
   OrchestrationProject,
   OrchestrationReadModel,
   OrchestrationThread,
+  ProjectScript,
   ProjectId,
   ThreadId,
 } from "@t3tools/contracts";
@@ -118,4 +119,40 @@ export function requireNonNegativeInteger(input: {
       `${input.field} must be an integer greater than or equal to 0.`,
     ),
   );
+}
+
+export function requireValidProjectScripts(input: {
+  readonly commandType: OrchestrationCommand["type"];
+  readonly scripts: ReadonlyArray<ProjectScript>;
+}): Effect.Effect<void, OrchestrationCommandInvariantError> {
+  const launcherScripts = input.scripts.filter((script) => script.runAsLocalhostLauncher);
+  if (launcherScripts.length > 1) {
+    return Effect.fail(
+      invariantError(
+        input.commandType,
+        "Only one localhost launcher action is allowed per project.",
+      ),
+    );
+  }
+
+  for (const script of launcherScripts) {
+    if (!script.command.includes("{{port}}")) {
+      return Effect.fail(
+        invariantError(
+          input.commandType,
+          `Localhost launcher action '${script.name}' must include '{{port}}' in its command.`,
+        ),
+      );
+    }
+    if (!Number.isInteger(script.localhostBasePort) || (script.localhostBasePort ?? -1) < 0) {
+      return Effect.fail(
+        invariantError(
+          input.commandType,
+          `Localhost launcher action '${script.name}' must define a non-negative base port.`,
+        ),
+      );
+    }
+  }
+
+  return Effect.void;
 }

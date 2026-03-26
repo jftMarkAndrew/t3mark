@@ -6,8 +6,9 @@ import {
 } from "@t3tools/contracts";
 import { memo } from "react";
 import GitActionsControl from "../GitActionsControl";
-import { DiffIcon, TerminalSquareIcon } from "lucide-react";
+import { DiffIcon, RocketIcon, TerminalSquareIcon } from "lucide-react";
 import { Badge } from "../ui/badge";
+import { Button } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import ProjectScriptsControl, { type NewProjectScriptInput } from "../ProjectScriptsControl";
 import { Toggle } from "../ui/toggle";
@@ -25,6 +26,9 @@ interface ChatHeaderProps {
   keybindings: ResolvedKeybindingsConfig;
   availableEditors: ReadonlyArray<EditorId>;
   terminalAvailable: boolean;
+  localhostLauncherScript: ProjectScript | null;
+  localhostLauncherDisabledReason: string | null;
+  localhostLauncherLabel: string;
   terminalOpen: boolean;
   terminalToggleShortcutLabel: string | null;
   diffToggleShortcutLabel: string | null;
@@ -34,6 +38,7 @@ interface ChatHeaderProps {
   onAddProjectScript: (input: NewProjectScriptInput) => Promise<void>;
   onUpdateProjectScript: (scriptId: string, input: NewProjectScriptInput) => Promise<void>;
   onDeleteProjectScript: (scriptId: string) => Promise<void>;
+  onRunLocalhostLauncher: () => void;
   onToggleTerminal: () => void;
   onToggleDiff: () => void;
 }
@@ -49,6 +54,9 @@ export const ChatHeader = memo(function ChatHeader({
   keybindings,
   availableEditors,
   terminalAvailable,
+  localhostLauncherScript,
+  localhostLauncherDisabledReason,
+  localhostLauncherLabel,
   terminalOpen,
   terminalToggleShortcutLabel,
   diffToggleShortcutLabel,
@@ -58,6 +66,7 @@ export const ChatHeader = memo(function ChatHeader({
   onAddProjectScript,
   onUpdateProjectScript,
   onDeleteProjectScript,
+  onRunLocalhostLauncher,
   onToggleTerminal,
   onToggleDiff,
 }: ChatHeaderProps) {
@@ -102,6 +111,28 @@ export const ChatHeader = memo(function ChatHeader({
           />
         )}
         {activeProjectName && <GitActionsControl gitCwd={gitCwd} activeThreadId={activeThreadId} />}
+        {localhostLauncherScript ? (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  className="shrink-0"
+                  variant="outline"
+                  size="xs"
+                  onClick={onRunLocalhostLauncher}
+                  disabled={localhostLauncherDisabledReason !== null}
+                  title={localhostLauncherScript.name}
+                >
+                  <RocketIcon className="size-3" />
+                  <span>{localhostLauncherLabel}</span>
+                </Button>
+              }
+            />
+            <TooltipPopup side="bottom">
+              {localhostLauncherDisabledReason ?? localhostLauncherScript.command}
+            </TooltipPopup>
+          </Tooltip>
+        ) : null}
         <Tooltip>
           <TooltipTrigger
             render={

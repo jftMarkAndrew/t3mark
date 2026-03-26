@@ -107,10 +107,14 @@ import { decodeProjectScriptKeybindingRule } from "~/lib/projectScriptKeybinding
 import { type NewProjectScriptInput } from "./ProjectScriptsControl";
 import {
   commandForProjectScript,
+  DEFAULT_LOCALHOST_BASE_PORT,
+  localhostLauncherProjectScript,
   nextProjectScriptId,
   projectScriptCwd,
+  projectScriptContainsPortPlaceholder,
   projectScriptRuntimeEnv,
   projectScriptIdFromCommand,
+  renderProjectScriptCommand,
   setupProjectScript,
 } from "~/projectScripts";
 import { SidebarTrigger } from "./ui/sidebar";
@@ -207,6 +211,29 @@ function formatOutgoingPrompt(params: {
 const COMPOSER_PATH_QUERY_DEBOUNCE_MS = 120;
 const SCRIPT_TERMINAL_COLS = 120;
 const SCRIPT_TERMINAL_ROWS = 30;
+
+function nextAvailableDevServerPort(input: {
+  threads: ReadonlyArray<{ projectId: ProjectId; id: ThreadId; devServerPort: number | null }>;
+  projectId: ProjectId;
+  threadId: ThreadId;
+  basePort: number;
+}): number {
+  const usedPorts = new Set(
+    input.threads.flatMap((thread) =>
+      thread.projectId === input.projectId &&
+      thread.id !== input.threadId &&
+      thread.devServerPort !== null
+        ? [thread.devServerPort]
+        : [],
+    ),
+  );
+
+  let candidate = input.basePort;
+  while (usedPorts.has(candidate)) {
+    candidate += 1;
+  }
+  return candidate;
+}
 
 const extendReplacementRangeForTrailingSpace = (
   text: string,
@@ -494,6 +521,23 @@ export default function ChatView({ threadId }: ChatViewProps) {
   );
   const latestTurnSettled = isLatestTurnSettled(activeLatestTurn, activeThread?.session ?? null);
   const activeProject = projects.find((p) => p.id === activeThread?.projectId);
+  const localhostLauncherScript = useMemo(
+    () => (activeProject ? localhostLauncherProjectScript(activeProject.scripts) : null),
+    [activeProject],
+  );
+  const localhostLauncherDisabledReason = useMemo(() => {
+    if (!localhostLauncherScript) return null;
+    if (!serverThread) return "Localhost launcher is available after the thread has been created.";
+    if (!serverThread.worktreePath) {
+      return "Localhost launcher requires a managed worktree thread.";
+    }
+    return null;
+  }, [localhostLauncherScript, serverThread]);
+  const localhostLauncherLabel = useMemo(() => {
+    if (!localhostLauncherScript) return "Localhost";
+    const port = serverThread?.devServerPort ?? null;
+    return port === null ? localhostLauncherScript.name : `Localhost ${port}`;
+  }, [localhostLauncherScript, serverThread?.devServerPort]);
 
   const openPullRequestDialog = useCallback(
     (reference?: string) => {
@@ -1335,6 +1379,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
         cwd?: string;
         env?: Record<string, string>;
         worktreePath?: string | null;
+        commandOverride?: string;
         preferNewTerminal?: boolean;
         rememberAsLastInvoked?: boolean;
       },
@@ -1395,7 +1440,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
         await api.terminal.write({
           threadId: activeThreadId,
           terminalId: targetTerminalId,
-          data: `${script.command}\r`,
+          data: `${options?.commandOverride ?? script.command}\r`,
         });
       } catch (error) {
         setThreadError(
@@ -1419,6 +1464,47 @@ export default function ChatView({ threadId }: ChatViewProps) {
       terminalState.terminalIds,
     ],
   );
+  const runLocalhostLauncher = useCallback(async () => {
+    const api = readNativeApi();
+    if (!api || !activeProject || !serverThread) return;
+
+    const launcherScript = localhostLauncherProjectScript(activeProject.scripts);
+    if (!launcherScript || !serverThread.worktreePath) {
+      return;
+    }
+
+    const basePort = launcherScript.localhostBasePort ?? DEFAULT_LOCALHOST_BASE_PORT;
+    const assignedPort =
+      serverThread.devServerPort ??
+      nextAvailableDevServerPort({
+        threads,
+        projectId: activeProject.id,
+        threadId: serverThread.id,
+        basePort,
+      });
+
+    if (serverThread.devServerPort !== assignedPort) {
+      await api.orchestration.dispatchCommand({
+        type: "thread.meta.update",
+        commandId: newCommandId(),
+        threadId: serverThread.id,
+        devServerPort: assignedPort,
+      });
+    }
+
+    await runProjectScript(launcherScript, {
+      cwd: serverThread.worktreePath,
+      worktreePath: serverThread.worktreePath,
+      commandOverride: renderProjectScriptCommand({
+        command: launcherScript.command,
+        port: assignedPort,
+      }),
+      env: {
+        T3CODE_LOCALHOST_PORT: String(assignedPort),
+        T3CODE_LOCALHOST_URL: `http://localhost:${assignedPort}`,
+      },
+    });
+  }, [activeProject, runProjectScript, serverThread, threads]);
   const persistProjectScripts = useCallback(
     async (input: {
       projectId: ProjectId;
@@ -1453,6 +1539,9 @@ export default function ChatView({ threadId }: ChatViewProps) {
   const saveProjectScript = useCallback(
     async (input: NewProjectScriptInput) => {
       if (!activeProject) return;
+      if (input.runAsLocalhostLauncher && !projectScriptContainsPortPlaceholder(input.command)) {
+        throw new Error('Localhost launcher commands must include "{{port}}".');
+      }
       const nextId = nextProjectScriptId(
         input.name,
         activeProject.scripts.map((script) => script.id),
@@ -1463,6 +1552,10 @@ export default function ChatView({ threadId }: ChatViewProps) {
         command: input.command,
         icon: input.icon,
         runOnWorktreeCreate: input.runOnWorktreeCreate,
+        runAsLocalhostLauncher: input.runAsLocalhostLauncher,
+        localhostBasePort: input.runAsLocalhostLauncher
+          ? (input.localhostBasePort ?? DEFAULT_LOCALHOST_BASE_PORT)
+          : null,
       };
       const nextScripts = input.runOnWorktreeCreate
         ? [
@@ -1472,12 +1565,17 @@ export default function ChatView({ threadId }: ChatViewProps) {
             nextScript,
           ]
         : [...activeProject.scripts, nextScript];
+      const normalizedNextScripts = input.runAsLocalhostLauncher
+        ? nextScripts.map((script) =>
+            script.id === nextId ? script : { ...script, runAsLocalhostLauncher: false },
+          )
+        : nextScripts;
 
       await persistProjectScripts({
         projectId: activeProject.id,
         projectCwd: activeProject.cwd,
         previousScripts: activeProject.scripts,
-        nextScripts,
+        nextScripts: normalizedNextScripts,
         keybinding: input.keybinding,
         keybindingCommand: commandForProjectScript(nextId),
       });
@@ -1487,6 +1585,9 @@ export default function ChatView({ threadId }: ChatViewProps) {
   const updateProjectScript = useCallback(
     async (scriptId: string, input: NewProjectScriptInput) => {
       if (!activeProject) return;
+      if (input.runAsLocalhostLauncher && !projectScriptContainsPortPlaceholder(input.command)) {
+        throw new Error('Localhost launcher commands must include "{{port}}".');
+      }
       const existingScript = activeProject.scripts.find((script) => script.id === scriptId);
       if (!existingScript) {
         throw new Error("Script not found.");
@@ -1498,6 +1599,10 @@ export default function ChatView({ threadId }: ChatViewProps) {
         command: input.command,
         icon: input.icon,
         runOnWorktreeCreate: input.runOnWorktreeCreate,
+        runAsLocalhostLauncher: input.runAsLocalhostLauncher,
+        localhostBasePort: input.runAsLocalhostLauncher
+          ? (input.localhostBasePort ?? DEFAULT_LOCALHOST_BASE_PORT)
+          : null,
       };
       const nextScripts = activeProject.scripts.map((script) =>
         script.id === scriptId
@@ -1506,12 +1611,17 @@ export default function ChatView({ threadId }: ChatViewProps) {
             ? { ...script, runOnWorktreeCreate: false }
             : script,
       );
+      const normalizedNextScripts = input.runAsLocalhostLauncher
+        ? nextScripts.map((script) =>
+            script.id === scriptId ? script : { ...script, runAsLocalhostLauncher: false },
+          )
+        : nextScripts;
 
       await persistProjectScripts({
         projectId: activeProject.id,
         projectCwd: activeProject.cwd,
         previousScripts: activeProject.scripts,
-        nextScripts,
+        nextScripts: normalizedNextScripts,
         keybinding: input.keybinding,
         keybindingCommand: commandForProjectScript(scriptId),
       });
@@ -3512,6 +3622,9 @@ export default function ChatView({ threadId }: ChatViewProps) {
           keybindings={keybindings}
           availableEditors={availableEditors}
           terminalAvailable={activeProject !== undefined}
+          localhostLauncherScript={localhostLauncherScript}
+          localhostLauncherDisabledReason={localhostLauncherDisabledReason}
+          localhostLauncherLabel={localhostLauncherLabel}
           terminalOpen={terminalState.terminalOpen}
           terminalToggleShortcutLabel={terminalToggleShortcutLabel}
           diffToggleShortcutLabel={diffPanelShortcutLabel}
@@ -3523,6 +3636,9 @@ export default function ChatView({ threadId }: ChatViewProps) {
           onAddProjectScript={saveProjectScript}
           onUpdateProjectScript={updateProjectScript}
           onDeleteProjectScript={deleteProjectScript}
+          onRunLocalhostLauncher={() => {
+            void runLocalhostLauncher();
+          }}
           onToggleTerminal={toggleTerminalVisibility}
           onToggleDiff={onToggleDiff}
         />

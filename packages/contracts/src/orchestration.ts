@@ -137,6 +137,12 @@ export const ProjectScript = Schema.Struct({
   command: TrimmedNonEmptyString,
   icon: ProjectScriptIcon,
   runOnWorktreeCreate: Schema.Boolean,
+  runAsLocalhostLauncher: Schema.optional(Schema.Boolean).pipe(
+    Schema.withDecodingDefault(() => false),
+  ),
+  localhostBasePort: Schema.optional(Schema.NullOr(Schema.Int)).pipe(
+    Schema.withDecodingDefault(() => null),
+  ),
 });
 export type ProjectScript = typeof ProjectScript.Type;
 
@@ -280,6 +286,9 @@ export const OrchestrationThread = Schema.Struct({
   ),
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+  devServerPort: Schema.optional(Schema.NullOr(Schema.Int)).pipe(
+    Schema.withDecodingDefault(() => null),
+  ),
   latestTurn: Schema.NullOr(OrchestrationLatestTurn),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
@@ -339,6 +348,9 @@ const ThreadCreateCommand = Schema.Struct({
   ),
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+  devServerPort: Schema.optional(Schema.NullOr(Schema.Int)).pipe(
+    Schema.withDecodingDefault(() => null),
+  ),
   createdAt: IsoDateTime,
 });
 
@@ -356,6 +368,7 @@ const ThreadMetaUpdateCommand = Schema.Struct({
   modelSelection: Schema.optional(ModelSelection),
   branch: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   worktreePath: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
+  devServerPort: Schema.optional(Schema.NullOr(Schema.Int)),
 });
 
 const ThreadRuntimeModeSetCommand = Schema.Struct({
@@ -633,6 +646,9 @@ export const ThreadCreatedPayload = Schema.Struct({
   ),
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+  devServerPort: Schema.optional(Schema.NullOr(Schema.Int)).pipe(
+    Schema.withDecodingDefault(() => null),
+  ),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });
@@ -648,6 +664,7 @@ export const ThreadMetaUpdatedPayload = Schema.Struct({
   modelSelection: Schema.optional(ModelSelection),
   branch: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   worktreePath: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
+  devServerPort: Schema.optional(Schema.NullOr(Schema.Int)),
   updatedAt: IsoDateTime,
 });
 

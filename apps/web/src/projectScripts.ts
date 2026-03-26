@@ -63,6 +63,9 @@ interface ProjectScriptRuntimeEnvInput {
   extraEnv?: Record<string, string>;
 }
 
+export const LOCALHOST_PORT_PLACEHOLDER = "{{port}}";
+export const DEFAULT_LOCALHOST_BASE_PORT = 4200;
+
 export function projectScriptCwd(input: {
   project: {
     cwd: string;
@@ -87,8 +90,30 @@ export function projectScriptRuntimeEnv(
   return env;
 }
 
+export function projectScriptContainsPortPlaceholder(command: string): boolean {
+  return command.includes(LOCALHOST_PORT_PLACEHOLDER);
+}
+
+export function localhostLauncherProjectScript(
+  scripts: ReadonlyArray<ProjectScript>,
+): ProjectScript | null {
+  return scripts.find((script) => script.runAsLocalhostLauncher) ?? null;
+}
+
+export function renderProjectScriptCommand(input: {
+  command: string;
+  port?: number | null;
+}): string {
+  if (input.port === undefined || input.port === null) {
+    return input.command;
+  }
+  return input.command.split(LOCALHOST_PORT_PLACEHOLDER).join(String(input.port));
+}
+
 export function primaryProjectScript(scripts: ProjectScript[]): ProjectScript | null {
-  const regular = scripts.find((script) => !script.runOnWorktreeCreate);
+  const regular = scripts.find(
+    (script) => !script.runOnWorktreeCreate && !script.runAsLocalhostLauncher,
+  );
   return regular ?? scripts[0] ?? null;
 }
 

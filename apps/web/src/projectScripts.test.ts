@@ -2,11 +2,15 @@ import { describe, expect, it } from "vitest";
 
 import {
   commandForProjectScript,
+  DEFAULT_LOCALHOST_BASE_PORT,
+  localhostLauncherProjectScript,
   nextProjectScriptId,
   primaryProjectScript,
   projectScriptCwd,
+  projectScriptContainsPortPlaceholder,
   projectScriptRuntimeEnv,
   projectScriptIdFromCommand,
+  renderProjectScriptCommand,
   setupProjectScript,
 } from "./projectScripts";
 
@@ -32,6 +36,8 @@ describe("projectScripts helpers", () => {
         command: "bun install",
         icon: "configure" as const,
         runOnWorktreeCreate: true,
+        runAsLocalhostLauncher: false,
+        localhostBasePort: null,
       },
       {
         id: "test",
@@ -39,11 +45,36 @@ describe("projectScripts helpers", () => {
         command: "bun test",
         icon: "test" as const,
         runOnWorktreeCreate: false,
+        runAsLocalhostLauncher: false,
+        localhostBasePort: null,
       },
     ];
 
     expect(primaryProjectScript(scripts)?.id).toBe("test");
     expect(setupProjectScript(scripts)?.id).toBe("setup");
+  });
+
+  it("resolves localhost launcher scripts and renders their commands", () => {
+    const scripts = [
+      {
+        id: "dev",
+        name: "Dev",
+        command: "npm run dev -- --port {{port}}",
+        icon: "play" as const,
+        runOnWorktreeCreate: false,
+        runAsLocalhostLauncher: true,
+        localhostBasePort: DEFAULT_LOCALHOST_BASE_PORT,
+      },
+    ];
+
+    expect(localhostLauncherProjectScript(scripts)?.id).toBe("dev");
+    expect(projectScriptContainsPortPlaceholder(scripts[0]!.command)).toBe(true);
+    expect(
+      renderProjectScriptCommand({
+        command: scripts[0]!.command,
+        port: 4202,
+      }),
+    ).toBe("npm run dev -- --port 4202");
   });
 
   it("builds default runtime env for scripts", () => {

@@ -1206,6 +1206,111 @@ describe("ChatView timeline estimator parity (full app)", () => {
     }
   });
 
+  it("launches the localhost action for worktree-backed threads with a persisted port", async () => {
+    const localhostSnapshot = createSnapshotForTargetUser({
+      targetMessageId: "msg-user-localhost-target" as MessageId,
+      targetText: "localhost thread",
+    });
+    const localhostSourceThread = localhostSnapshot.threads[0];
+    if (!localhostSourceThread) {
+      throw new Error("Expected localhost test thread.");
+    }
+    const localhostThread = {
+      ...localhostSourceThread,
+      branch: "feature/web",
+      worktreePath: "/repo/worktrees/feature-web",
+      devServerPort: null,
+    };
+    const snapshot = withProjectScripts(
+      {
+        ...localhostSnapshot,
+        threads: [localhostThread],
+      },
+      [
+        {
+          id: "dev",
+          name: "Dev server",
+          command: "npm run dev -- --port {{port}}",
+          icon: "play",
+          runOnWorktreeCreate: false,
+          runAsLocalhostLauncher: true,
+          localhostBasePort: 4200,
+        },
+      ],
+    );
+
+    const mounted = await mountChatView({
+      viewport: DEFAULT_VIEWPORT,
+      snapshot,
+    });
+
+    try {
+      const launchButton = await waitForElement(
+        () =>
+          Array.from(document.querySelectorAll("button")).find((button) =>
+            button.textContent?.includes("Localhost"),
+          ) as HTMLButtonElement | null,
+        "Unable to find localhost launcher button.",
+      );
+      launchButton.click();
+
+      await vi.waitFor(
+        () => {
+          const commandRequest = wsRequests.find(
+            (request) =>
+              request._tag === ORCHESTRATION_WS_METHODS.dispatchCommand &&
+              (request.command as { type?: string } | undefined)?.type === "thread.meta.update",
+          );
+          expect(commandRequest).toMatchObject({
+            _tag: ORCHESTRATION_WS_METHODS.dispatchCommand,
+            command: {
+              type: "thread.meta.update",
+              threadId: THREAD_ID,
+              devServerPort: 4200,
+            },
+          });
+        },
+        { timeout: 8_000, interval: 16 },
+      );
+
+      await vi.waitFor(
+        () => {
+          const openRequest = wsRequests.find(
+            (request) => request._tag === WS_METHODS.terminalOpen,
+          );
+          expect(openRequest).toMatchObject({
+            _tag: WS_METHODS.terminalOpen,
+            threadId: THREAD_ID,
+            cwd: "/repo/worktrees/feature-web",
+            env: {
+              T3CODE_PROJECT_ROOT: "/repo/project",
+              T3CODE_WORKTREE_PATH: "/repo/worktrees/feature-web",
+              T3CODE_LOCALHOST_PORT: "4200",
+              T3CODE_LOCALHOST_URL: "http://localhost:4200",
+            },
+          });
+        },
+        { timeout: 8_000, interval: 16 },
+      );
+
+      await vi.waitFor(
+        () => {
+          const writeRequest = wsRequests.find(
+            (request) => request._tag === WS_METHODS.terminalWrite,
+          );
+          expect(writeRequest).toMatchObject({
+            _tag: WS_METHODS.terminalWrite,
+            threadId: THREAD_ID,
+            data: "npm run dev -- --port 4200\r",
+          });
+        },
+        { timeout: 8_000, interval: 16 },
+      );
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
   it("toggles plan mode with Shift+Tab only while the composer is focused", async () => {
     const mounted = await mountChatView({
       viewport: DEFAULT_VIEWPORT,
