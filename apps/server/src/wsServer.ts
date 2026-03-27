@@ -48,6 +48,8 @@ import { WebSocketServer, type WebSocket } from "ws";
 import { createLogger } from "./logger";
 import { GitManager } from "./git/Services/GitManager.ts";
 import { TerminalManager } from "./terminal/Services/Manager.ts";
+import { DevHostRegistry } from "./fork/Services/DevHostRegistry.ts";
+import { Jira } from "./fork/Services/Jira.ts";
 import { Keybindings } from "./keybindings";
 import { ServerSettingsService } from "./serverSettings";
 import { searchWorkspaceEntries } from "./workspaceEntries";
@@ -226,6 +228,8 @@ export type ServerRuntimeServices =
   | GitManager
   | GitCore
   | TerminalManager
+  | DevHostRegistry
+  | Jira
   | Keybindings
   | ServerSettingsService
   | Open
@@ -264,6 +268,8 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
 
   const gitManager = yield* GitManager;
   const terminalManager = yield* TerminalManager;
+  const devHostRegistry = yield* DevHostRegistry;
+  const jira = yield* Jira;
   const keybindingsManager = yield* Keybindings;
   const serverSettingsManager = yield* ServerSettingsService;
   const providerRegistry = yield* ProviderRegistry;
@@ -729,7 +735,12 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
   const runPromise = Effect.runPromiseWith(runtimeServices);
 
   const unsubscribeTerminalEvents = yield* terminalManager.subscribe(
-    (event) => void Effect.runPromise(pushBus.publishAll(WS_CHANNELS.terminalEvent, event)),
+    (event) =>
+      void Effect.runPromise(
+        devHostRegistry
+          .reconcileTerminalEvent(event)
+          .pipe(Effect.andThen(pushBus.publishAll(WS_CHANNELS.terminalEvent, event))),
+      ),
   );
   yield* Effect.addFinalizer(() => Effect.sync(() => unsubscribeTerminalEvents()));
   yield* readiness.markTerminalSubscriptionsReady;
@@ -867,6 +878,11 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
         return yield* gitManager.listOpenPullRequests(body);
       }
 
+      case WS_METHODS.gitGetPullRequestDiff: {
+        const body = stripRequestTag(request.body);
+        return yield* gitManager.getPullRequestDiff(body);
+      }
+
       case WS_METHODS.gitListBranches: {
         const body = stripRequestTag(request.body);
         return yield* git.listBranches(body);
@@ -927,6 +943,20 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
         return yield* terminalManager.close(body);
       }
 
+      case WS_METHODS.devHostsRegister: {
+        const body = stripRequestTag(request.body);
+        return yield* devHostRegistry.registerHost(body);
+      }
+
+      case WS_METHODS.devHostsList: {
+        return yield* devHostRegistry.listHosts;
+      }
+
+      case WS_METHODS.devHostsStop: {
+        const body = stripRequestTag(request.body);
+        return yield* devHostRegistry.stopHost(body);
+      }
+
       case WS_METHODS.serverGetConfig: {
         const keybindingsConfig = yield* keybindingsManager.loadConfigState;
         const settings = yield* serverSettingsManager.getSettings;
@@ -961,6 +991,11 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
       case WS_METHODS.serverUpdateSettings: {
         const body = stripRequestTag(request.body);
         return yield* serverSettingsManager.updateSettings(body.patch);
+      }
+
+      case WS_METHODS.serverGetJiraIssue: {
+        const body = stripRequestTag(request.body);
+        return yield* jira.lookupIssue(body);
       }
 
       default: {

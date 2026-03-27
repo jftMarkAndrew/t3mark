@@ -2,6 +2,8 @@
 
 Use this when you want to open T3 Code from another device (phone, tablet, another laptop).
 
+If you add fork-specific remote-access behavior, keep it isolated behind explicit fork entrypoints instead of modifying shared startup or transport paths broadly. That keeps future upstream merges easier to reason about.
+
 ## CLI ↔ Env option map
 
 The T3 Code CLI accepts the following configuration options, available either as CLI flags or environment variables:

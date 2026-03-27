@@ -7,6 +7,7 @@ import {
   GitActionProgressPhase,
   ModelSelection,
   type GitOpenPullRequestSummary,
+  type GitPullRequestDiffFile,
 } from "@t3tools/contracts";
 import {
   resolveAutoFeatureBranchName,
@@ -355,6 +356,55 @@ function toResolvedPullRequest(pr: {
     headBranch: pr.headRefName,
     state: pr.state ?? "open",
   };
+}
+
+function parsePatchFiles(patch: string): GitPullRequestDiffFile[] {
+  const normalized = patch.trim();
+  if (normalized.length === 0) {
+    return [];
+  }
+
+  const chunks = normalized
+    .split(/^diff --git /gm)
+    .map((chunk, index) => (index === 0 ? chunk : `diff --git ${chunk}`))
+    .filter((chunk) => chunk.trim().length > 0);
+
+  return chunks.flatMap((chunk) => {
+    const lines = chunk.split(/\r?\n/g);
+    const header = lines[0] ?? "";
+    const headerMatch = /^diff --git a\/(.+?) b\/(.+)$/.exec(header);
+    const fallbackPath = headerMatch?.[2] ?? headerMatch?.[1] ?? "";
+    const pathLine =
+      lines.find((line) => line.startsWith("+++ b/")) ??
+      lines.find((line) => line.startsWith("--- a/")) ??
+      null;
+    const path = (pathLine?.replace(/^[+-]{3} [ab]\//, "").trim() || fallbackPath).trim();
+    if (path.length === 0 || path === "/dev/null") {
+      return [];
+    }
+
+    let additions = 0;
+    let deletions = 0;
+    for (const line of lines) {
+      if (line.startsWith("+++ ") || line.startsWith("--- ")) {
+        continue;
+      }
+      if (line.startsWith("+")) {
+        additions += 1;
+      } else if (line.startsWith("-")) {
+        deletions += 1;
+      }
+    }
+
+    return [
+      {
+        path,
+        additions,
+        deletions,
+        patch: chunk.trim(),
+      },
+    ];
+  });
 }
 
 function shouldPreferSshRemote(url: string | null): boolean {
@@ -1139,6 +1189,37 @@ export const makeGitManager = Effect.gen(function* () {
     },
   );
 
+  const getPullRequestDiff: GitManagerShape["getPullRequestDiff"] = Effect.fnUntraced(
+    function* (input) {
+      const pullRequest = yield* gitHubCli
+        .getPullRequest({
+          cwd: input.cwd,
+          reference: normalizePullRequestReference(input.reference),
+        })
+        .pipe(
+          Effect.mapError((cause) =>
+            gitManagerError("getPullRequestDiff", "Failed to resolve pull request.", cause),
+          ),
+        );
+      const patch = yield* gitHubCli
+        .getPullRequestDiffPatch({
+          cwd: input.cwd,
+          reference: String(pullRequest.number),
+        })
+        .pipe(
+          Effect.mapError((cause) =>
+            gitManagerError("getPullRequestDiff", "Failed to fetch pull request diff.", cause),
+          ),
+        );
+
+      return {
+        pullRequest: toResolvedPullRequest(pullRequest),
+        patch,
+        files: parsePatchFiles(patch),
+      };
+    },
+  );
+
   const runFeatureBranchStep = (
     modelSelection: ModelSelection,
     cwd: string,
@@ -1321,6 +1402,7 @@ export const makeGitManager = Effect.gen(function* () {
     resolvePullRequest,
     preparePullRequestThread,
     listOpenPullRequests,
+    getPullRequestDiff,
     runStackedAction,
   } satisfies GitManagerShape;
 });

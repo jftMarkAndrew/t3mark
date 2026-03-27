@@ -187,6 +187,7 @@ import {
   SendPhase,
 } from "./ChatView.logic";
 import { useLocalStorage } from "~/hooks/useLocalStorage";
+import { forkQueryKeys } from "../lib/forkReactQuery";
 
 const ATTACHMENT_PREVIEW_HANDOFF_TTL_MS = 5000;
 const IMAGE_SIZE_LIMIT_LABEL = `${Math.round(PROVIDER_SEND_TURN_MAX_IMAGE_BYTES / (1024 * 1024))}MB`;
@@ -1525,9 +1526,9 @@ export default function ChatView({ threadId }: ChatViewProps) {
         terminalId?: string;
         rememberAsLastInvoked?: boolean;
       },
-    ) => {
+    ): Promise<{ terminalId: string; cwd: string } | null> => {
       const api = readNativeApi();
-      if (!api || !activeThreadId || !activeProject || !activeThread) return;
+      if (!api || !activeThreadId || !activeProject || !activeThread) return null;
       if (options?.rememberAsLastInvoked !== false) {
         setLastInvokedScriptByProjectId((current) => {
           if (current[activeProject.id] === script.id) return current;
@@ -1590,11 +1591,13 @@ export default function ChatView({ threadId }: ChatViewProps) {
           terminalId: targetTerminalId,
           data: `${options?.commandOverride ?? script.command}\r`,
         });
+        return { terminalId: targetTerminalId, cwd: targetCwd };
       } catch (error) {
         setThreadError(
           activeThreadId,
           error instanceof Error ? error.message : `Failed to run script "${script.name}".`,
         );
+        return null;
       }
     },
     [
@@ -1733,7 +1736,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
         });
       }
 
-      await runProjectScript(launcherScript, {
+      const launch = await runProjectScript(launcherScript, {
         cwd: targetCwd,
         worktreePath: activeThreadWorktreePath,
         commandOverride: renderProjectScriptCommand({
@@ -1745,6 +1748,18 @@ export default function ChatView({ threadId }: ChatViewProps) {
           T3CODE_LOCALHOST_URL: `http://localhost:${assignedPort}`,
         },
       });
+      if (!launch) {
+        return;
+      }
+      await api.devHosts.register({
+        threadId: activeThread.id,
+        projectId: activeProject.id,
+        projectCwd: activeProject.cwd,
+        terminalId: launch.terminalId,
+        port: assignedPort,
+        launchKind: "localhost_launcher",
+      });
+      await queryClient.invalidateQueries({ queryKey: forkQueryKeys.devHosts() });
     },
     [
       activeProject,
@@ -1752,6 +1767,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
       activeThreadWorktreePath,
       draftDevServerPortByThreadId,
       effectiveLocalhostLauncherScript,
+      queryClient,
       runProjectScript,
       serverThread,
       terminalStateByThreadId,

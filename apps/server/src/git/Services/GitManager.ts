@@ -10,6 +10,8 @@ import {
   GitActionProgressEvent,
   GitListOpenPullRequestsInput,
   GitListOpenPullRequestsResult,
+  GitPullRequestDiffInput,
+  GitPullRequestDiffResult,
   GitPreparePullRequestThreadInput,
   GitPreparePullRequestThreadResult,
   GitPullRequestRefInput,
@@ -63,6 +65,13 @@ export interface GitManagerShape {
   readonly listOpenPullRequests: (
     input: GitListOpenPullRequestsInput,
   ) => Effect.Effect<GitListOpenPullRequestsResult, GitManagerServiceError>;
+
+  /**
+   * Fetch the diff for a pull request.
+   */
+  readonly getPullRequestDiff: (
+    input: GitPullRequestDiffInput,
+  ) => Effect.Effect<GitPullRequestDiffResult, GitManagerServiceError>;
 
   /**
    * Run a stacked Git action (`commit`, `commit_push`, `commit_push_pr`).

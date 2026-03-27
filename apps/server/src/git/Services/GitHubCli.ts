@@ -71,6 +71,14 @@ export interface GitHubCliShape {
   }) => Effect.Effect<GitHubPullRequestSummary, GitHubCliError>;
 
   /**
+   * Fetch the raw patch for a pull request.
+   */
+  readonly getPullRequestDiffPatch: (input: {
+    readonly cwd: string;
+    readonly reference: string;
+  }) => Effect.Effect<string, GitHubCliError>;
+
+  /**
    * Resolve clone URLs for a GitHub repository.
    */
   readonly getRepositoryCloneUrls: (input: {

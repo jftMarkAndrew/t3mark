@@ -14,6 +14,8 @@ export const gitQueryKeys = {
   status: (cwd: string | null) => ["git", "status", cwd] as const,
   branches: (cwd: string | null) => ["git", "branches", cwd] as const,
   openPullRequests: (cwd: string | null) => ["git", "open-pull-requests", cwd] as const,
+  pullRequestDiff: (cwd: string | null, reference: string | null) =>
+    ["git", "pull-request-diff", cwd, reference] as const,
 };
 
 export const gitMutationKeys = {
@@ -94,6 +96,26 @@ export function gitResolvePullRequestQueryOptions(input: {
     staleTime: 30_000,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
+  });
+}
+
+export function gitPullRequestDiffQueryOptions(input: {
+  cwd: string | null;
+  reference: string | null;
+}) {
+  return queryOptions({
+    queryKey: gitQueryKeys.pullRequestDiff(input.cwd, input.reference),
+    queryFn: async () => {
+      const api = ensureNativeApi();
+      if (!input.cwd || !input.reference) {
+        throw new Error("Pull request diff is unavailable.");
+      }
+      return api.git.getPullRequestDiff({ cwd: input.cwd, reference: input.reference });
+    },
+    enabled: input.cwd !== null && input.reference !== null,
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: true,
   });
 }
 

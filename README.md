@@ -21,6 +21,8 @@ We are very very early in this project. Expect bugs.
 
 We are not accepting contributions yet.
 
+Fork-specific features in this repo should stay behind clearly named modules or wrappers so upstream merges remain low-friction. If you touch upstream-heavy paths, keep the fork integration narrow and documented.
+
 ## If you REALLY want to contribute still.... read this first
 
 Read [CONTRIBUTING.md](./CONTRIBUTING.md) before opening an issue or PR.

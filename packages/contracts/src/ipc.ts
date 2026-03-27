@@ -1,4 +1,6 @@
 import type {
+  GitPullRequestDiffInput,
+  GitPullRequestDiffResult,
   GitCheckoutInput,
   GitActionProgressEvent,
   GitCreateBranchInput,
@@ -21,6 +23,8 @@ import type {
   GitStatusInput,
   GitStatusResult,
 } from "./git";
+import type { DevHostListResult, DevHostRegisterInput, DevHostStopInput } from "./devHost";
+import type { JiraIssueLookupInput, JiraIssueLookupResult } from "./jira";
 import type {
   ProjectDetectBootstrapInput,
   ProjectDetectBootstrapResult,
@@ -135,6 +139,11 @@ export interface NativeApi {
     close: (input: TerminalCloseInput) => Promise<void>;
     onEvent: (callback: (event: TerminalEvent) => void) => () => void;
   };
+  devHosts: {
+    register: (input: DevHostRegisterInput) => Promise<void>;
+    list: () => Promise<DevHostListResult>;
+    stop: (input: DevHostStopInput) => Promise<void>;
+  };
   projects: {
     detectBootstrap: (input: ProjectDetectBootstrapInput) => Promise<ProjectDetectBootstrapResult>;
     searchEntries: (input: ProjectSearchEntriesInput) => Promise<ProjectSearchEntriesResult>;
@@ -150,6 +159,7 @@ export interface NativeApi {
     listOpenPullRequests: (
       input: GitListOpenPullRequestsInput,
     ) => Promise<GitListOpenPullRequestsResult>;
+    getPullRequestDiff: (input: GitPullRequestDiffInput) => Promise<GitPullRequestDiffResult>;
     createWorktree: (input: GitCreateWorktreeInput) => Promise<GitCreateWorktreeResult>;
     removeWorktree: (input: GitRemoveWorktreeInput) => Promise<void>;
     createBranch: (input: GitCreateBranchInput) => Promise<void>;
@@ -177,6 +187,7 @@ export interface NativeApi {
     upsertKeybinding: (input: ServerUpsertKeybindingInput) => Promise<ServerUpsertKeybindingResult>;
     getSettings: () => Promise<ServerSettings>;
     updateSettings: (patch: ServerSettingsPatch) => Promise<ServerSettings>;
+    getJiraIssue: (input: JiraIssueLookupInput) => Promise<JiraIssueLookupResult>;
   };
   orchestration: {
     getSnapshot: () => Promise<OrchestrationReadModel>;

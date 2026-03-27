@@ -64,6 +64,9 @@ function createBaseServerConfig(): ServerConfig {
         codex: { enabled: true, binaryPath: "", homePath: "", customModels: [] },
         claudeAgent: { enabled: true, binaryPath: "", customModels: [] },
       },
+      integrations: {
+        jira: { enabled: false, baseUrl: "", email: "", apiToken: "" },
+      },
     },
   };
 }

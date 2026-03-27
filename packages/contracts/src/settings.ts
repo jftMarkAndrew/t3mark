@@ -2,6 +2,7 @@ import { Effect } from "effect";
 import * as Schema from "effect/Schema";
 import * as SchemaTransformation from "effect/SchemaTransformation";
 import { TrimmedNonEmptyString, TrimmedString } from "./baseSchemas";
+import { JiraSettings, JiraSettingsPatch } from "./jira";
 import {
   ClaudeModelOptions,
   CodexModelOptions,
@@ -87,6 +88,9 @@ export const ServerSettings = Schema.Struct({
     codex: CodexSettings.pipe(Schema.withDecodingDefault(() => ({}))),
     claudeAgent: ClaudeSettings.pipe(Schema.withDecodingDefault(() => ({}))),
   }).pipe(Schema.withDecodingDefault(() => ({}))),
+  integrations: Schema.Struct({
+    jira: JiraSettings.pipe(Schema.withDecodingDefault(() => ({}))),
+  }).pipe(Schema.withDecodingDefault(() => ({}))),
 });
 export type ServerSettings = typeof ServerSettings.Type;
 
@@ -147,6 +151,11 @@ export const ServerSettingsPatch = Schema.Struct({
     Schema.Struct({
       codex: Schema.optionalKey(CodexSettingsPatch),
       claudeAgent: Schema.optionalKey(ClaudeSettingsPatch),
+    }),
+  ),
+  integrations: Schema.optionalKey(
+    Schema.Struct({
+      jira: Schema.optionalKey(JiraSettingsPatch),
     }),
   ),
 });

@@ -1753,6 +1753,7 @@ describe("WebSocket Server", () => {
       status,
       resolvePullRequest,
       preparePullRequestThread,
+      getPullRequestDiff: vi.fn(() => Effect.void as any),
       listOpenPullRequests: vi.fn(() => Effect.succeed({ pullRequests: [] })),
       runStackedAction,
     };
@@ -1793,6 +1794,7 @@ describe("WebSocket Server", () => {
       status: vi.fn(() => Effect.void as any),
       resolvePullRequest: vi.fn(() => Effect.succeed(resolvePullRequestResult)),
       preparePullRequestThread: vi.fn(() => Effect.succeed(preparePullRequestThreadResult)),
+      getPullRequestDiff: vi.fn(() => Effect.void as any),
       listOpenPullRequests: vi.fn(() => Effect.succeed({ pullRequests: [] })),
       runStackedAction: vi.fn(() => Effect.void as any),
     };
@@ -1842,6 +1844,7 @@ describe("WebSocket Server", () => {
       status: vi.fn(() => Effect.void as any),
       resolvePullRequest: vi.fn(() => Effect.void as any),
       preparePullRequestThread: vi.fn(() => Effect.void as any),
+      getPullRequestDiff: vi.fn(() => Effect.void as any),
       listOpenPullRequests: vi.fn(() => Effect.succeed({ pullRequests: [] })),
       runStackedAction,
     };
@@ -1899,6 +1902,7 @@ describe("WebSocket Server", () => {
       status: vi.fn(() => Effect.void as any),
       resolvePullRequest: vi.fn(() => Effect.void as any),
       preparePullRequestThread: vi.fn(() => Effect.void as any),
+      getPullRequestDiff: vi.fn(() => Effect.void as any),
       listOpenPullRequests,
       runStackedAction: vi.fn(() => Effect.void as any),
     };
@@ -1950,6 +1954,7 @@ describe("WebSocket Server", () => {
       status: vi.fn(() => Effect.void as any),
       resolvePullRequest: vi.fn(() => Effect.void as any),
       preparePullRequestThread: vi.fn(() => Effect.void as any),
+      getPullRequestDiff: vi.fn(() => Effect.void as any),
       listOpenPullRequests: vi.fn(() => Effect.succeed({ pullRequests: [] })),
       runStackedAction,
     };

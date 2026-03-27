@@ -9,6 +9,8 @@ export * from "./keybindings";
 export * from "./server";
 export * from "./settings";
 export * from "./git";
+export * from "./devHost";
+export * from "./jira";
 export * from "./orchestration";
 export * from "./editor";
 export * from "./project";

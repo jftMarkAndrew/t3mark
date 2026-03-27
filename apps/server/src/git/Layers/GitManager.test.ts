@@ -374,6 +374,7 @@ function createGitHubCliWithFakeGh(scenario: FakeGhScenario = {}): {
   return {
     service: {
       execute,
+      getPullRequestDiffPatch: () => Effect.succeed(""),
       listOpenPullRequests: (input) =>
         execute({
           cwd: input.cwd,

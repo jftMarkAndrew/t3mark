@@ -62,6 +62,7 @@ import {
   gitStatusQueryOptions,
   invalidateGitQueries,
 } from "../lib/gitReactQuery";
+import { devHostsQueryOptions, forkQueryKeys } from "../lib/forkReactQuery";
 import { serverConfigQueryOptions } from "../lib/serverReactQuery";
 import { readNativeApi } from "../nativeApi";
 import { useComposerDraftStore } from "../composerDraftStore";
@@ -82,7 +83,15 @@ import {
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "./ui/alert";
 import { Button } from "./ui/button";
 import { Collapsible, CollapsibleContent } from "./ui/collapsible";
-import { Menu, MenuGroup, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "./ui/menu";
+import {
+  Menu,
+  MenuGroup,
+  MenuItem,
+  MenuPopup,
+  MenuRadioGroup,
+  MenuRadioItem,
+  MenuTrigger,
+} from "./ui/menu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import {
   SidebarContent,
@@ -409,6 +418,43 @@ export default function Sidebar() {
   });
   const queryClient = useQueryClient();
   const removeWorktreeMutation = useMutation(gitRemoveWorktreeMutationOptions({ queryClient }));
+  const stopDevHostMutation = useMutation({
+    mutationFn: async (hostId: string) => {
+      const api = readNativeApi();
+      if (!api) {
+        throw new Error("Dev hosts are unavailable.");
+      }
+      await api.devHosts.stop({ hostId });
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: forkQueryKeys.devHosts() });
+    },
+  });
+  const devHostsQuery = useQuery(devHostsQueryOptions());
+  const [hiddenDevHostIds, setHiddenDevHostIds] = useState<ReadonlySet<string>>(() => new Set());
+  const handleStopDevHost = useCallback(
+    (event: MouseEvent<HTMLElement>, hostId: string) => {
+      event.preventDefault();
+      event.stopPropagation();
+      setHiddenDevHostIds((current) => {
+        const next = new Set(current);
+        next.add(hostId);
+        return next;
+      });
+      void stopDevHostMutation.mutateAsync(hostId).catch((error) => {
+        setHiddenDevHostIds((current) => {
+          const next = new Set(current);
+          next.delete(hostId);
+          return next;
+        });
+        toastManager.add({
+          type: "error",
+          title: error instanceof Error ? error.message : "Failed to stop running host.",
+        });
+      });
+    },
+    [stopDevHostMutation],
+  );
   const [addingProject, setAddingProject] = useState(false);
   const [newCwd, setNewCwd] = useState("");
   const [isPickingFolder, setIsPickingFolder] = useState(false);
@@ -485,6 +531,25 @@ export default function Sidebar() {
     }
     return map;
   }, [threadGitStatusCwds, threadGitStatusQueries, threadGitTargets]);
+  const runningHostByThreadId = useMemo(
+    () =>
+      new Map(
+        (devHostsQuery.data?.hosts ?? [])
+          .filter((host) => !hiddenDevHostIds.has(host.id))
+          .map((host) => [host.threadId, host] as const),
+      ),
+    [devHostsQuery.data?.hosts, hiddenDevHostIds],
+  );
+  useEffect(() => {
+    const activeHostIds = new Set((devHostsQuery.data?.hosts ?? []).map((host) => host.id));
+    setHiddenDevHostIds((current) => {
+      if (current.size === 0) {
+        return current;
+      }
+      const next = new Set([...current].filter((hostId) => activeHostIds.has(hostId)));
+      return next.size === current.size ? current : next;
+    });
+  }, [devHostsQuery.data?.hosts]);
   const projectOpenPrQueries = useQueries({
     queries: projects.map((project) => ({
       ...gitOpenPullRequestsQueryOptions(project.cwd),
@@ -1063,6 +1128,10 @@ export default function Sidebar() {
 
   const handleThreadClick = useCallback(
     (event: MouseEvent, threadId: ThreadId, orderedProjectThreadIds: readonly ThreadId[]) => {
+      const target = event.target;
+      if (target instanceof Element && target.closest("[data-dev-host-control='true']")) {
+        return;
+      }
       const isMac = isMacPlatform(navigator.platform);
       const isModClick = isMac ? event.metaKey : event.ctrlKey;
       const isShiftClick = event.shiftKey;
@@ -1280,6 +1349,7 @@ export default function Sidebar() {
       const terminalStatus = terminalStatusFromRunningIds(
         selectThreadTerminalState(terminalStateByThreadId, thread.id).runningTerminalIds,
       );
+      const runningHost = runningHostByThreadId.get(thread.id) ?? null;
 
       return (
         <SidebarMenuSubItem key={thread.id} className="w-full" data-thread-item>
@@ -1403,6 +1473,42 @@ export default function Sidebar() {
                     className={`size-3 ${terminalStatus.pulse ? "animate-pulse" : ""}`}
                   />
                 </span>
+              )}
+              {runningHost && (
+                <Menu>
+                  <MenuTrigger
+                    render={
+                      <button
+                        type="button"
+                        data-dev-host-control="true"
+                        className="inline-flex items-center rounded-sm px-1 py-0.5 text-[10px] font-medium text-emerald-600 outline-hidden transition-colors hover:bg-emerald-500/10 focus-visible:ring-1 focus-visible:ring-ring dark:text-emerald-300"
+                        onPointerDownCapture={(event) => {
+                          event.stopPropagation();
+                        }}
+                        onClickCapture={(event) => {
+                          event.stopPropagation();
+                        }}
+                        aria-label={`Running on port ${runningHost.port}`}
+                      />
+                    }
+                  >
+                    {`:${runningHost.port}`}
+                  </MenuTrigger>
+                  <MenuPopup align="end">
+                    <MenuItem
+                      disabled={stopDevHostMutation.isPending}
+                      data-dev-host-control="true"
+                      onPointerDownCapture={(event) => {
+                        event.stopPropagation();
+                      }}
+                      onClick={(event) => {
+                        handleStopDevHost(event, runningHost.id);
+                      }}
+                    >
+                      Stop
+                    </MenuItem>
+                  </MenuPopup>
+                </Menu>
               )}
               <span
                 className={`text-[10px] ${

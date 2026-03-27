@@ -126,6 +126,12 @@ export const GitListOpenPullRequestsInput = Schema.Struct({
 });
 export type GitListOpenPullRequestsInput = typeof GitListOpenPullRequestsInput.Type;
 
+export const GitPullRequestDiffInput = Schema.Struct({
+  cwd: TrimmedNonEmptyStringSchema,
+  reference: GitPullRequestReference,
+});
+export type GitPullRequestDiffInput = typeof GitPullRequestDiffInput.Type;
+
 export const GitRemoveWorktreeInput = Schema.Struct({
   cwd: TrimmedNonEmptyStringSchema,
   path: TrimmedNonEmptyStringSchema,
@@ -210,6 +216,21 @@ export const GitListOpenPullRequestsResult = Schema.Struct({
   pullRequests: Schema.Array(GitOpenPullRequestSummary),
 });
 export type GitListOpenPullRequestsResult = typeof GitListOpenPullRequestsResult.Type;
+
+export const GitPullRequestDiffFile = Schema.Struct({
+  path: TrimmedNonEmptyStringSchema,
+  additions: NonNegativeInt,
+  deletions: NonNegativeInt,
+  patch: Schema.String,
+});
+export type GitPullRequestDiffFile = typeof GitPullRequestDiffFile.Type;
+
+export const GitPullRequestDiffResult = Schema.Struct({
+  pullRequest: GitResolvedPullRequest,
+  patch: Schema.String,
+  files: Schema.Array(GitPullRequestDiffFile),
+});
+export type GitPullRequestDiffResult = typeof GitPullRequestDiffResult.Type;
 
 export const GitRunStackedActionResult = Schema.Struct({
   action: GitStackedAction,

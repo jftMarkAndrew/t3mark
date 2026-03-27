@@ -11,6 +11,7 @@ import {
   OrchestrationGetTurnDiffInput,
   OrchestrationReplayEventsInput,
 } from "./orchestration";
+import { DevHostRegisterInput, DevHostStopInput } from "./devHost";
 import {
   GitActionProgressEvent,
   GitCheckoutInput,
@@ -20,6 +21,7 @@ import {
   GitInitInput,
   GitListOpenPullRequestsInput,
   GitListBranchesInput,
+  GitPullRequestDiffInput,
   GitPullInput,
   GitPullRequestRefInput,
   GitRemoveWorktreeInput,
@@ -42,6 +44,7 @@ import {
   ProjectWriteFileInput,
 } from "./project";
 import { OpenInEditorInput } from "./editor";
+import { JiraIssueLookupInput } from "./jira";
 import { ServerConfigUpdatedPayload, ServerProviderUpdatedPayload } from "./server";
 import { ServerSettingsPatch } from "./settings";
 
@@ -65,6 +68,7 @@ export const WS_METHODS = {
   gitRunStackedAction: "git.runStackedAction",
   gitListBranches: "git.listBranches",
   gitListOpenPullRequests: "git.listOpenPullRequests",
+  gitGetPullRequestDiff: "git.getPullRequestDiff",
   gitCreateWorktree: "git.createWorktree",
   gitRemoveWorktree: "git.removeWorktree",
   gitCreateBranch: "git.createBranch",
@@ -81,12 +85,17 @@ export const WS_METHODS = {
   terminalRestart: "terminal.restart",
   terminalClose: "terminal.close",
 
+  devHostsRegister: "devHosts.register",
+  devHostsList: "devHosts.list",
+  devHostsStop: "devHosts.stop",
+
   // Server meta
   serverGetConfig: "server.getConfig",
   serverRefreshProviders: "server.refreshProviders",
   serverUpsertKeybinding: "server.upsertKeybinding",
   serverGetSettings: "server.getSettings",
   serverUpdateSettings: "server.updateSettings",
+  serverGetJiraIssue: "server.getJiraIssue",
 } as const;
 
 // ── Push Event Channels ──────────────────────────────────────────────
@@ -136,6 +145,7 @@ const WebSocketRequestBody = Schema.Union([
   tagRequestBody(WS_METHODS.gitRunStackedAction, GitRunStackedActionInput),
   tagRequestBody(WS_METHODS.gitListBranches, GitListBranchesInput),
   tagRequestBody(WS_METHODS.gitListOpenPullRequests, GitListOpenPullRequestsInput),
+  tagRequestBody(WS_METHODS.gitGetPullRequestDiff, GitPullRequestDiffInput),
   tagRequestBody(WS_METHODS.gitCreateWorktree, GitCreateWorktreeInput),
   tagRequestBody(WS_METHODS.gitRemoveWorktree, GitRemoveWorktreeInput),
   tagRequestBody(WS_METHODS.gitCreateBranch, GitCreateBranchInput),
@@ -152,12 +162,17 @@ const WebSocketRequestBody = Schema.Union([
   tagRequestBody(WS_METHODS.terminalRestart, TerminalRestartInput),
   tagRequestBody(WS_METHODS.terminalClose, TerminalCloseInput),
 
+  tagRequestBody(WS_METHODS.devHostsRegister, DevHostRegisterInput),
+  tagRequestBody(WS_METHODS.devHostsList, Schema.Struct({})),
+  tagRequestBody(WS_METHODS.devHostsStop, DevHostStopInput),
+
   // Server meta
   tagRequestBody(WS_METHODS.serverGetConfig, Schema.Struct({})),
   tagRequestBody(WS_METHODS.serverRefreshProviders, Schema.Struct({})),
   tagRequestBody(WS_METHODS.serverUpsertKeybinding, KeybindingRule),
   tagRequestBody(WS_METHODS.serverGetSettings, Schema.Struct({})),
   tagRequestBody(WS_METHODS.serverUpdateSettings, Schema.Struct({ patch: ServerSettingsPatch })),
+  tagRequestBody(WS_METHODS.serverGetJiraIssue, JiraIssueLookupInput),
 ]);
 
 export const WebSocketRequest = Schema.Struct({

@@ -155,6 +155,11 @@ export function createWsNativeApi(): NativeApi {
       onEvent: (callback) =>
         transport.subscribe(WS_CHANNELS.terminalEvent, (message) => callback(message.data)),
     },
+    devHosts: {
+      register: (input) => transport.request(WS_METHODS.devHostsRegister, input),
+      list: () => transport.request(WS_METHODS.devHostsList),
+      stop: (input) => transport.request(WS_METHODS.devHostsStop, input),
+    },
     projects: {
       detectBootstrap: (input) => transport.request(WS_METHODS.projectsDetectBootstrap, input),
       searchEntries: (input) => transport.request(WS_METHODS.projectsSearchEntries, input),
@@ -184,6 +189,7 @@ export function createWsNativeApi(): NativeApi {
         transport.request(WS_METHODS.gitRunStackedAction, input, { timeoutMs: null }),
       listBranches: (input) => transport.request(WS_METHODS.gitListBranches, input),
       listOpenPullRequests: (input) => transport.request(WS_METHODS.gitListOpenPullRequests, input),
+      getPullRequestDiff: (input) => transport.request(WS_METHODS.gitGetPullRequestDiff, input),
       createWorktree: (input) => transport.request(WS_METHODS.gitCreateWorktree, input),
       removeWorktree: (input) => transport.request(WS_METHODS.gitRemoveWorktree, input),
       createBranch: (input) => transport.request(WS_METHODS.gitCreateBranch, input),
@@ -216,6 +222,7 @@ export function createWsNativeApi(): NativeApi {
       upsertKeybinding: (input) => transport.request(WS_METHODS.serverUpsertKeybinding, input),
       getSettings: () => transport.request(WS_METHODS.serverGetSettings),
       updateSettings: (patch) => transport.request(WS_METHODS.serverUpdateSettings, { patch }),
+      getJiraIssue: (input) => transport.request(WS_METHODS.serverGetJiraIssue, input),
     },
     orchestration: {
       getSnapshot: () => transport.request(ORCHESTRATION_WS_METHODS.getSnapshot),

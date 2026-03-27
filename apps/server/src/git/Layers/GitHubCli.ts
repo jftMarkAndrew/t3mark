@@ -268,6 +268,11 @@ const makeGitHubCli = Effect.sync(() => {
         ),
         Effect.map(normalizePullRequestSummary),
       ),
+    getPullRequestDiffPatch: (input) =>
+      execute({
+        cwd: input.cwd,
+        args: ["pr", "diff", input.reference, "--patch"],
+      }).pipe(Effect.map((result) => result.stdout)),
     getRepositoryCloneUrls: (input) =>
       execute({
         cwd: input.cwd,

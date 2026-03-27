@@ -12,6 +12,10 @@
       "types": "./src/git.ts",
       "import": "./src/git.ts"
     },
+    "./jira": {
+      "types": "./src/jira.ts",
+      "import": "./src/jira.ts"
+    },
     "./bootstrap": {
       "types": "./src/bootstrap.ts",
       "import": "./src/bootstrap.ts"

@@ -22,6 +22,8 @@ Small performance improvements.
 
 Tightly scoped maintenance work that clearly improves the project without changing its direction.
 
+Fork-specific work should be isolated behind dedicated modules, services, hooks, or wrapper components rather than spread across core upstream flows. If a change exists only for this fork, call that out explicitly and keep the integration seam narrow.
+
 ## What We Are Least Likely To Accept
 
 Large PRs.
