@@ -1,11 +1,14 @@
 import type { ThreadId } from "@t3tools/contracts";
+import { useQuery } from "@tanstack/react-query";
 import { FolderIcon, GitForkIcon } from "lucide-react";
 import { useCallback } from "react";
 
+import { gitBranchesQueryOptions } from "../lib/gitReactQuery";
 import { newCommandId } from "../lib/utils";
 import { readNativeApi } from "../nativeApi";
 import { useComposerDraftStore } from "../composerDraftStore";
 import { useStore } from "../store";
+import { resolveTrackedWorktreePath } from "../worktreeCleanup";
 import {
   EnvMode,
   resolveDraftEnvModeAfterBranchChange,
@@ -43,9 +46,12 @@ export default function BranchToolbar({
   const serverThread = threads.find((thread) => thread.id === threadId);
   const activeProjectId = serverThread?.projectId ?? draftThread?.projectId ?? null;
   const activeProject = projects.find((project) => project.id === activeProjectId);
+  const projectBranchesQuery = useQuery(gitBranchesQueryOptions(activeProject?.cwd ?? null));
   const activeThreadId = serverThread?.id ?? (draftThread ? threadId : undefined);
   const activeThreadBranch = serverThread?.branch ?? draftThread?.branch ?? null;
-  const activeWorktreePath = serverThread?.worktreePath ?? draftThread?.worktreePath ?? null;
+  const activeWorktreePath = serverThread
+    ? resolveTrackedWorktreePath(serverThread.worktreePath, projectBranchesQuery.data?.branches)
+    : (draftThread?.worktreePath ?? null);
   const branchCwd = activeWorktreePath ?? activeProject?.cwd ?? null;
   const hasServerThread = serverThread !== undefined;
   const effectiveEnvMode = resolveEffectiveEnvMode({

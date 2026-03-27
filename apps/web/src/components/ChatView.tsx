@@ -106,6 +106,7 @@ import { Menu, MenuItem, MenuPopup, MenuTrigger } from "./ui/menu";
 import { cn, randomUUID } from "~/lib/utils";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import { toastManager } from "./ui/toast";
+import { resolveTrackedWorktreePath } from "../worktreeCleanup";
 import { decodeProjectScriptKeybindingRule } from "~/lib/projectScriptKeybindings";
 import { type NewProjectBootstrapInput, type NewProjectScriptInput } from "./ProjectScriptsControl";
 import {
@@ -567,9 +568,18 @@ export default function ChatView({ threadId }: ChatViewProps) {
   );
   const latestTurnSettled = isLatestTurnSettled(activeLatestTurn, activeThread?.session ?? null);
   const activeProject = projects.find((p) => p.id === activeThread?.projectId);
+  const serverThreadWorktreePath = serverThread?.worktreePath ?? null;
+  const projectBranchesQuery = useQuery(gitBranchesQueryOptions(activeProject?.cwd ?? null));
+  const activeThreadWorktreePath = useMemo(
+    () =>
+      serverThreadWorktreePath
+        ? resolveTrackedWorktreePath(serverThreadWorktreePath, projectBranchesQuery.data?.branches)
+        : (activeThread?.worktreePath ?? null),
+    [activeThread?.worktreePath, projectBranchesQuery.data?.branches, serverThreadWorktreePath],
+  );
   const bootstrapDetectionQuery = useQuery(
     projectDetectBootstrapQueryOptions({
-      cwd: activeThread?.worktreePath ?? activeProject?.cwd ?? null,
+      cwd: activeThreadWorktreePath ?? activeProject?.cwd ?? null,
       enabled: activeProject !== undefined,
     }),
   );
@@ -602,9 +612,6 @@ export default function ChatView({ threadId }: ChatViewProps) {
   }, [effectiveBootstrapConfig?.devCommand, localhostLauncherScript]);
   const localhostLauncherDisabledReason = useMemo(() => {
     if (!effectiveLocalhostLauncherScript) return null;
-    if (!activeThread?.worktreePath) {
-      return "Localhost launcher requires a managed worktree thread.";
-    }
     if (serverThread?.bootstrapStatus === "running" && serverThread.pendingLocalhostLaunch) {
       return "Launching after bootstrap completes.";
     }
@@ -613,7 +620,6 @@ export default function ChatView({ threadId }: ChatViewProps) {
     }
     return null;
   }, [
-    activeThread?.worktreePath,
     effectiveLocalhostLauncherScript,
     serverThread?.bootstrapLastError,
     serverThread?.bootstrapStatus,
@@ -1169,7 +1175,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
   const gitCwd = activeProject
     ? projectScriptCwd({
         project: { cwd: activeProject.cwd },
-        worktreePath: activeThread?.worktreePath ?? null,
+        worktreePath: activeThreadWorktreePath,
       })
     : null;
   const composerTriggerKind = composerTrigger?.kind ?? null;
@@ -1307,7 +1313,6 @@ export default function ChatView({ threadId }: ChatViewProps) {
     [selectedProvider, providerStatuses],
   );
   const activeProjectCwd = activeProject?.cwd ?? null;
-  const activeThreadWorktreePath = activeThread?.worktreePath ?? null;
   const threadTerminalRuntimeEnv = useMemo(() => {
     if (!activeProjectCwd) return {};
     return projectScriptRuntimeEnv({
@@ -1317,6 +1322,10 @@ export default function ChatView({ threadId }: ChatViewProps) {
       worktreePath: activeThreadWorktreePath,
     });
   }, [activeProjectCwd, activeThreadWorktreePath]);
+  const terminalWorkspacePending =
+    serverThreadWorktreePath !== null &&
+    projectBranchesQuery.data === undefined &&
+    projectBranchesQuery.error === null;
   // Default true while loading to avoid toolbar flicker.
   const isGitRepo = branchesQuery.data?.isRepo ?? true;
   const terminalToggleShortcutLabel = useMemo(
@@ -1555,7 +1564,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
         project: {
           cwd: activeProject.cwd,
         },
-        worktreePath: options?.worktreePath ?? activeThread.worktreePath ?? null,
+        worktreePath: options?.worktreePath ?? activeThreadWorktreePath,
         ...(options?.env ? { extraEnv: options.env } : {}),
       });
       const openTerminalInput: Parameters<typeof api.terminal.open>[0] = shouldCreateNewTerminal
@@ -1591,6 +1600,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
     [
       activeProject,
       activeThread,
+      activeThreadWorktreePath,
       activeThreadId,
       gitCwd,
       setTerminalOpen,
@@ -1626,7 +1636,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
   const runBootstrap = useCallback(
     async (options?: { queueLocalhost?: boolean }) => {
       const api = readNativeApi();
-      if (!api || !activeProject || !activeThread?.worktreePath || !serverThread) {
+      if (!api || !activeProject || !activeThreadWorktreePath || !serverThread) {
         return false;
       }
       const installCommand = effectiveBootstrapConfig?.installCommand ?? null;
@@ -1659,8 +1669,8 @@ export default function ChatView({ threadId }: ChatViewProps) {
           localhostBasePort: null,
         },
         {
-          cwd: activeThread.worktreePath,
-          worktreePath: activeThread.worktreePath,
+          cwd: activeThreadWorktreePath,
+          worktreePath: activeThreadWorktreePath,
           terminalId: BOOTSTRAP_TERMINAL_ID,
           rememberAsLastInvoked: false,
           commandOverride: `{ ${installCommand}; }; printf '\\n${BOOTSTRAP_EXIT_SENTINEL}%s\\n' "$?"`,
@@ -1671,7 +1681,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
     },
     [
       activeProject,
-      activeThread?.worktreePath,
+      activeThreadWorktreePath,
       effectiveBootstrapConfig?.enabled,
       effectiveBootstrapConfig?.installCommand,
       runProjectScript,
@@ -1686,10 +1696,10 @@ export default function ChatView({ threadId }: ChatViewProps) {
 
       const launcherScript =
         script && script.runAsLocalhostLauncher ? script : effectiveLocalhostLauncherScript;
-      const targetWorktreePath = activeThread.worktreePath;
-      if (!launcherScript || !targetWorktreePath) {
+      if (!launcherScript) {
         return;
       }
+      const targetCwd = activeThreadWorktreePath ?? activeProject.cwd;
 
       const basePort = launcherScript.localhostBasePort ?? DEFAULT_LOCALHOST_BASE_PORT;
       const draftPort = draftDevServerPortByThreadId[activeThread.id] ?? null;
@@ -1724,8 +1734,8 @@ export default function ChatView({ threadId }: ChatViewProps) {
       }
 
       await runProjectScript(launcherScript, {
-        cwd: targetWorktreePath,
-        worktreePath: targetWorktreePath,
+        cwd: targetCwd,
+        worktreePath: activeThreadWorktreePath,
         commandOverride: renderProjectScriptCommand({
           command: launcherScript.command,
           port: assignedPort,
@@ -1739,6 +1749,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
     [
       activeProject,
       activeThread,
+      activeThreadWorktreePath,
       draftDevServerPortByThreadId,
       effectiveLocalhostLauncherScript,
       runProjectScript,
@@ -1751,11 +1762,12 @@ export default function ChatView({ threadId }: ChatViewProps) {
     async (script?: ProjectScript) => {
       const launcherScript =
         script && script.runAsLocalhostLauncher ? script : effectiveLocalhostLauncherScript;
-      if (!launcherScript || !activeThread?.worktreePath) {
+      if (!launcherScript) {
         return;
       }
 
       if (
+        !activeThreadWorktreePath ||
         !serverThread ||
         !effectiveBootstrapConfig?.enabled ||
         !effectiveBootstrapConfig.installCommand
@@ -1783,7 +1795,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
       await runBootstrap({ queueLocalhost: true });
     },
     [
-      activeThread,
+      activeThreadWorktreePath,
       effectiveBootstrapConfig?.enabled,
       effectiveBootstrapConfig?.installCommand,
       effectiveLocalhostLauncherScript,
@@ -4728,7 +4740,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
       {/* end horizontal flex container */}
 
       {(() => {
-        if (!terminalState.terminalOpen || !activeProject) {
+        if (!terminalState.terminalOpen || !activeProject || terminalWorkspacePending) {
           return null;
         }
         return (

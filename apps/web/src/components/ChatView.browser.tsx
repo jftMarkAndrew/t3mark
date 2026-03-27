@@ -53,6 +53,19 @@ interface TestFixture {
   snapshot: OrchestrationReadModel;
   serverConfig: ServerConfig;
   welcome: WsWelcomePayload;
+  gitBranchesResultByCwd?: Record<
+    string,
+    {
+      isRepo: boolean;
+      hasOriginRemote: boolean;
+      branches: Array<{
+        name: string;
+        current: boolean;
+        isDefault: boolean;
+        worktreePath: string | null;
+      }>;
+    }
+  >;
 }
 
 let fixture: TestFixture;
@@ -288,6 +301,7 @@ function buildFixture(snapshot: OrchestrationReadModel): TestFixture {
       bootstrapProjectId: PROJECT_ID,
       bootstrapThreadId: THREAD_ID,
     },
+    gitBranchesResultByCwd: {},
   };
 }
 
@@ -423,22 +437,43 @@ function resolveWsRpc(body: WsRequestEnvelope["body"]): unknown {
     return fixture.serverConfig;
   }
   if (tag === WS_METHODS.gitListBranches) {
+    const cwd = typeof body.cwd === "string" ? body.cwd : "/repo/project";
+    const configuredResult = fixture.gitBranchesResultByCwd?.[cwd];
+    if (configuredResult) {
+      return configuredResult;
+    }
+    const worktreeBranches = fixture.snapshot.threads.flatMap((thread) => {
+      if (!thread.branch || !thread.worktreePath) {
+        return [];
+      }
+      return [
+        {
+          name: thread.branch,
+          current: cwd === thread.worktreePath,
+          isDefault: false,
+          worktreePath: thread.worktreePath,
+        },
+      ];
+    });
     return {
       isRepo: true,
       hasOriginRemote: true,
       branches: [
         {
           name: "main",
-          current: true,
+          current: !worktreeBranches.some((branch) => branch.current),
           isDefault: true,
           worktreePath: null,
         },
+        ...worktreeBranches,
       ],
     };
   }
   if (tag === WS_METHODS.gitStatus) {
+    const cwd = typeof body.cwd === "string" ? body.cwd : "/repo/project";
+    const matchingThread = fixture.snapshot.threads.find((thread) => thread.worktreePath === cwd);
     return {
-      branch: "main",
+      branch: matchingThread?.branch ?? "main",
       hasWorkingTreeChanges: false,
       workingTree: {
         files: [],
@@ -1210,6 +1245,83 @@ describe("ChatView timeline estimator parity (full app)", () => {
     }
   });
 
+  it("falls back to the project cwd when a persisted worktree is no longer tracked", async () => {
+    const snapshot = createSnapshotForTargetUser({
+      targetMessageId: "msg-user-stale-worktree-target" as MessageId,
+      targetText: "stale worktree thread",
+    });
+    const sourceThread = snapshot.threads[0];
+    if (!sourceThread) {
+      throw new Error("Expected stale worktree test thread.");
+    }
+
+    useTerminalStateStore.setState({
+      terminalStateByThreadId: {
+        [THREAD_ID]: {
+          terminalOpen: true,
+          terminalHeight: 320,
+          terminalIds: ["default"],
+          runningTerminalIds: [],
+          activeTerminalId: "default",
+          terminalGroups: [{ id: "group-default", terminalIds: ["default"] }],
+          activeTerminalGroupId: "group-default",
+        },
+      },
+    });
+
+    const mounted = await mountChatView({
+      viewport: DEFAULT_VIEWPORT,
+      snapshot: {
+        ...snapshot,
+        threads: [
+          {
+            ...sourceThread,
+            id: THREAD_ID,
+            branch: "feature/stale-worktree",
+            worktreePath: "/repo/worktrees/stale-worktree",
+          },
+        ],
+      },
+      configureFixture: (nextFixture) => {
+        nextFixture.gitBranchesResultByCwd = {
+          "/repo/project": {
+            isRepo: true,
+            hasOriginRemote: true,
+            branches: [
+              {
+                name: "main",
+                current: true,
+                isDefault: true,
+                worktreePath: null,
+              },
+            ],
+          },
+        };
+      },
+    });
+
+    try {
+      await vi.waitFor(
+        () => {
+          const openRequest = wsRequests.find(
+            (request) => request._tag === WS_METHODS.terminalOpen,
+          );
+          expect(openRequest).toMatchObject({
+            _tag: WS_METHODS.terminalOpen,
+            threadId: THREAD_ID,
+            cwd: "/repo/project",
+            env: {
+              T3CODE_PROJECT_ROOT: "/repo/project",
+            },
+          });
+        },
+        { timeout: 8_000, interval: 16 },
+      );
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
   it("launches the localhost action for worktree-backed threads with a persisted port", async () => {
     const localhostSnapshot = createSnapshotForTargetUser({
       targetMessageId: "msg-user-localhost-target" as MessageId,
@@ -1306,6 +1418,93 @@ describe("ChatView timeline estimator parity (full app)", () => {
             _tag: WS_METHODS.terminalWrite,
             threadId: THREAD_ID,
             data: "npm run dev -- --port 4200\r",
+          });
+        },
+        { timeout: 8_000, interval: 16 },
+      );
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
+  it("launches the localhost action from the project cwd when a persisted worktree is stale", async () => {
+    const localhostSnapshot = createSnapshotForTargetUser({
+      targetMessageId: "msg-user-localhost-stale-target" as MessageId,
+      targetText: "localhost stale thread",
+    });
+    const localhostSourceThread = localhostSnapshot.threads[0];
+    if (!localhostSourceThread) {
+      throw new Error("Expected localhost stale test thread.");
+    }
+    const localhostThread = {
+      ...localhostSourceThread,
+      branch: "feature/stale-localhost",
+      worktreePath: "/repo/worktrees/stale-localhost",
+      devServerPort: null,
+    };
+    const snapshot = withProjectScripts(
+      {
+        ...localhostSnapshot,
+        threads: [localhostThread],
+      },
+      [
+        {
+          id: "dev",
+          name: "Dev server",
+          command: "ng serve --port {{port}}",
+          icon: "play",
+          runOnWorktreeCreate: false,
+          runAsLocalhostLauncher: true,
+          localhostBasePort: 4200,
+        },
+      ],
+    );
+
+    const mounted = await mountChatView({
+      viewport: DEFAULT_VIEWPORT,
+      snapshot,
+      configureFixture: (nextFixture) => {
+        nextFixture.gitBranchesResultByCwd = {
+          "/repo/project": {
+            isRepo: true,
+            hasOriginRemote: true,
+            branches: [
+              {
+                name: "main",
+                current: true,
+                isDefault: true,
+                worktreePath: null,
+              },
+            ],
+          },
+        };
+      },
+    });
+
+    try {
+      const launchButton = await waitForElement(
+        () =>
+          Array.from(document.querySelectorAll("button")).find((button) =>
+            button.textContent?.includes("Localhost"),
+          ) as HTMLButtonElement | null,
+        "Unable to find localhost launcher button.",
+      );
+      launchButton.click();
+
+      await vi.waitFor(
+        () => {
+          const openRequest = wsRequests.find(
+            (request) => request._tag === WS_METHODS.terminalOpen,
+          );
+          expect(openRequest).toMatchObject({
+            _tag: WS_METHODS.terminalOpen,
+            threadId: THREAD_ID,
+            cwd: "/repo/project",
+            env: {
+              T3CODE_PROJECT_ROOT: "/repo/project",
+              T3CODE_LOCALHOST_PORT: "4200",
+              T3CODE_LOCALHOST_URL: "http://localhost:4200",
+            },
           });
         },
         { timeout: 8_000, interval: 16 },

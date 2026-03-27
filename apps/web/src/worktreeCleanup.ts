@@ -1,3 +1,5 @@
+import type { GitBranch } from "@t3tools/contracts";
+
 import type { Thread } from "./types";
 
 function normalizeWorktreePath(path: string | null): string | null {
@@ -6,6 +8,24 @@ function normalizeWorktreePath(path: string | null): string | null {
     return null;
   }
   return trimmed;
+}
+
+export function resolveTrackedWorktreePath(
+  worktreePath: string | null,
+  branches: ReadonlyArray<Pick<GitBranch, "worktreePath">> | null | undefined,
+): string | null {
+  const normalizedWorktreePath = normalizeWorktreePath(worktreePath);
+  if (!normalizedWorktreePath) {
+    return null;
+  }
+  if (!branches) {
+    return normalizedWorktreePath;
+  }
+  return branches.some(
+    (branch) => normalizeWorktreePath(branch.worktreePath) === normalizedWorktreePath,
+  )
+    ? normalizedWorktreePath
+    : null;
 }
 
 export function getOrphanedWorktreePathForThread(

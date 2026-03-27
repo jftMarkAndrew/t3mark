@@ -2,7 +2,11 @@ import { ProjectId, ThreadId } from "@t3tools/contracts";
 import { describe, expect, it } from "vitest";
 
 import { DEFAULT_INTERACTION_MODE, DEFAULT_RUNTIME_MODE, type Thread } from "./types";
-import { formatWorktreePathForDisplay, getOrphanedWorktreePathForThread } from "./worktreeCleanup";
+import {
+  formatWorktreePathForDisplay,
+  getOrphanedWorktreePathForThread,
+  resolveTrackedWorktreePath,
+} from "./worktreeCleanup";
 
 function makeThread(overrides: Partial<Thread> = {}): Thread {
   return {
@@ -107,5 +111,33 @@ describe("formatWorktreePathForDisplay", () => {
   it("ignores trailing slashes", () => {
     const result = formatWorktreePathForDisplay("/tmp/custom-worktrees/my-worktree/");
     expect(result).toBe("my-worktree");
+  });
+});
+
+describe("resolveTrackedWorktreePath", () => {
+  it("keeps the worktree path while branch metadata is still loading", () => {
+    expect(resolveTrackedWorktreePath("/tmp/repo/worktrees/feature-a", undefined)).toBe(
+      "/tmp/repo/worktrees/feature-a",
+    );
+  });
+
+  it("keeps the worktree path when the repository still tracks it", () => {
+    expect(
+      resolveTrackedWorktreePath("/tmp/repo/worktrees/feature-a", [
+        {
+          worktreePath: "/tmp/repo/worktrees/feature-a",
+        },
+      ]),
+    ).toBe("/tmp/repo/worktrees/feature-a");
+  });
+
+  it("drops the worktree path when it is no longer tracked", () => {
+    expect(
+      resolveTrackedWorktreePath("/tmp/repo/worktrees/feature-a", [
+        {
+          worktreePath: "/tmp/repo/worktrees/feature-b",
+        },
+      ]),
+    ).toBeNull();
   });
 });
