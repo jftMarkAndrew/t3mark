@@ -220,6 +220,7 @@ const BOOTSTRAP_EXIT_SENTINEL = "__T3_BOOTSTRAP_EXIT_CODE__:";
 
 function nextAvailableDevServerPort(input: {
   threads: ReadonlyArray<{ projectId: ProjectId; id: ThreadId; devServerPort: number | null }>;
+  terminalStateByThreadId: Parameters<typeof selectThreadTerminalState>[0];
   projectId: ProjectId;
   threadId: ThreadId;
   basePort: number;
@@ -228,7 +229,9 @@ function nextAvailableDevServerPort(input: {
     input.threads.flatMap((thread) =>
       thread.projectId === input.projectId &&
       thread.id !== input.threadId &&
-      thread.devServerPort !== null
+      thread.devServerPort !== null &&
+      selectThreadTerminalState(input.terminalStateByThreadId, thread.id).runningTerminalIds
+        .length > 0
         ? [thread.devServerPort]
         : [],
     ),
@@ -239,6 +242,31 @@ function nextAvailableDevServerPort(input: {
     candidate += 1;
   }
   return candidate;
+}
+
+function preferredDevServerPort(input: {
+  threads: ReadonlyArray<{ projectId: ProjectId; id: ThreadId; devServerPort: number | null }>;
+  terminalStateByThreadId: Parameters<typeof selectThreadTerminalState>[0];
+  projectId: ProjectId;
+  threadId: ThreadId;
+  basePort: number;
+  persistedPort: number | null;
+}): number {
+  const hasRunningTerminals =
+    selectThreadTerminalState(input.terminalStateByThreadId, input.threadId).runningTerminalIds
+      .length > 0;
+
+  if (hasRunningTerminals && input.persistedPort !== null) {
+    return input.persistedPort;
+  }
+
+  return nextAvailableDevServerPort({
+    threads: input.threads,
+    terminalStateByThreadId: input.terminalStateByThreadId,
+    projectId: input.projectId,
+    threadId: input.threadId,
+    basePort: input.basePort,
+  });
 }
 
 const extendReplacementRangeForTrailingSpace = (
@@ -436,6 +464,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
   const terminalState = useTerminalStateStore((state) =>
     selectThreadTerminalState(state.terminalStateByThreadId, threadId),
   );
+  const terminalStateByThreadId = useTerminalStateStore((state) => state.terminalStateByThreadId);
   const storeSetTerminalOpen = useTerminalStateStore((s) => s.setTerminalOpen);
   const storeSetTerminalHeight = useTerminalStateStore((s) => s.setTerminalHeight);
   const storeSplitTerminal = useTerminalStateStore((s) => s.splitTerminal);
@@ -585,9 +614,28 @@ export default function ChatView({ threadId }: ChatViewProps) {
   ]);
   const localhostLauncherLabel = useMemo(() => {
     if (!effectiveLocalhostLauncherScript) return "Localhost";
-    const port =
+    const persistedPort =
       serverThread?.devServerPort ??
       (activeThread ? (draftDevServerPortByThreadId[activeThread.id] ?? null) : null);
+    const port =
+      activeThread && activeProject
+        ? preferredDevServerPort({
+            threads: [
+              ...threads,
+              ...Object.entries(draftDevServerPortByThreadId).map(([id, devServerPort]) => ({
+                id: id as ThreadId,
+                projectId: activeProject.id,
+                devServerPort: devServerPort ?? null,
+              })),
+            ],
+            terminalStateByThreadId,
+            projectId: activeProject.id,
+            threadId: activeThread.id,
+            basePort:
+              effectiveLocalhostLauncherScript.localhostBasePort ?? DEFAULT_LOCALHOST_BASE_PORT,
+            persistedPort,
+          })
+        : persistedPort;
     if (serverThread?.bootstrapStatus === "running" && serverThread.pendingLocalhostLaunch) {
       return port === null ? "Preparing" : `Preparing ${port}`;
     }
@@ -596,6 +644,9 @@ export default function ChatView({ threadId }: ChatViewProps) {
     activeThread,
     draftDevServerPortByThreadId,
     effectiveLocalhostLauncherScript,
+    activeProject,
+    terminalStateByThreadId,
+    threads,
     serverThread?.bootstrapStatus,
     serverThread?.pendingLocalhostLaunch,
     serverThread?.devServerPort,
@@ -1623,22 +1674,21 @@ export default function ChatView({ threadId }: ChatViewProps) {
 
       const basePort = launcherScript.localhostBasePort ?? DEFAULT_LOCALHOST_BASE_PORT;
       const draftPort = draftDevServerPortByThreadId[activeThread.id] ?? null;
-      const assignedPort =
-        serverThread?.devServerPort ??
-        draftPort ??
-        nextAvailableDevServerPort({
-          threads: [
-            ...threads,
-            ...Object.entries(draftDevServerPortByThreadId).map(([id, port]) => ({
-              id: id as ThreadId,
-              projectId: activeProject.id,
-              devServerPort: port ?? null,
-            })),
-          ],
-          projectId: activeProject.id,
-          threadId: activeThread.id,
-          basePort,
-        });
+      const assignedPort = preferredDevServerPort({
+        threads: [
+          ...threads,
+          ...Object.entries(draftDevServerPortByThreadId).map(([id, port]) => ({
+            id: id as ThreadId,
+            projectId: activeProject.id,
+            devServerPort: port ?? null,
+          })),
+        ],
+        terminalStateByThreadId,
+        projectId: activeProject.id,
+        threadId: activeThread.id,
+        basePort,
+        persistedPort: serverThread?.devServerPort ?? draftPort,
+      });
 
       if (serverThread && serverThread.devServerPort !== assignedPort) {
         await api.orchestration.dispatchCommand({
@@ -1674,6 +1724,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
       effectiveLocalhostLauncherScript,
       runProjectScript,
       serverThread,
+      terminalStateByThreadId,
       threads,
     ],
   );

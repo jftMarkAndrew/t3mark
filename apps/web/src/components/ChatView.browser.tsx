@@ -27,6 +27,7 @@ import {
   type TerminalContextDraft,
   removeInlineTerminalContextPlaceholder,
 } from "../lib/terminalContext";
+import { useTerminalStateStore } from "../terminalStateStore";
 import { isMacPlatform } from "../lib/utils";
 import { getRouter } from "../router";
 import { useStore } from "../store";
@@ -847,6 +848,9 @@ describe("ChatView timeline estimator parity (full app)", () => {
       threads: [],
       threadsHydrated: false,
     });
+    useTerminalStateStore.setState({
+      terminalStateByThreadId: {},
+    });
   });
 
   afterEach(() => {
@@ -1394,6 +1398,122 @@ describe("ChatView timeline estimator parity (full app)", () => {
             _tag: WS_METHODS.terminalWrite,
             threadId: THREAD_ID,
             data: "ng serve --port 4200\r",
+          });
+        },
+        { timeout: 8_000, interval: 16 },
+      );
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
+  it("reclaims the lowest free localhost port when a stale thread reservation is no longer active", async () => {
+    const localhostSnapshot = createSnapshotForTargetUser({
+      targetMessageId: "msg-user-localhost-reclaim-target" as MessageId,
+      targetText: "localhost reclaim thread",
+    });
+    const localhostSourceThread = localhostSnapshot.threads[0];
+    if (!localhostSourceThread) {
+      throw new Error("Expected localhost reclaim test thread.");
+    }
+    const activeThread = {
+      ...localhostSourceThread,
+      id: THREAD_ID,
+      branch: "feature/reclaim",
+      worktreePath: "/repo/worktrees/feature-reclaim",
+      devServerPort: 4202,
+    };
+    const staleThread = {
+      ...localhostSourceThread,
+      id: "thread-stale-4200" as ThreadId,
+      branch: "feature/stale-4200",
+      worktreePath: "/repo/worktrees/feature-stale-4200",
+      devServerPort: 4200,
+    };
+    const busyThread = {
+      ...localhostSourceThread,
+      id: "thread-busy-4201" as ThreadId,
+      branch: "feature/busy-4201",
+      worktreePath: "/repo/worktrees/feature-busy-4201",
+      devServerPort: 4201,
+    };
+    const snapshot = withProjectScripts(
+      {
+        ...localhostSnapshot,
+        threads: [activeThread, staleThread, busyThread],
+      },
+      [
+        {
+          id: "dev",
+          name: "Dev server",
+          command: "ng serve --port {{port}}",
+          icon: "play",
+          runOnWorktreeCreate: false,
+          runAsLocalhostLauncher: true,
+          localhostBasePort: 4200,
+        },
+      ],
+    );
+
+    useTerminalStateStore.setState({
+      terminalStateByThreadId: {
+        [busyThread.id]: {
+          terminalOpen: false,
+          terminalHeight: 320,
+          terminalIds: ["default"],
+          runningTerminalIds: ["default"],
+          activeTerminalId: "default",
+          terminalGroups: [{ id: "group-default", terminalIds: ["default"] }],
+          activeTerminalGroupId: "group-default",
+        },
+      },
+    });
+
+    const mounted = await mountChatView({
+      viewport: DEFAULT_VIEWPORT,
+      snapshot,
+    });
+
+    try {
+      const launchButton = await waitForElement(
+        () =>
+          Array.from(document.querySelectorAll("button")).find((button) =>
+            button.textContent?.includes("Localhost"),
+          ) as HTMLButtonElement | null,
+        "Unable to find localhost reclaim button.",
+      );
+      expect(launchButton.textContent).toContain("4200");
+
+      launchButton.click();
+
+      await vi.waitFor(
+        () => {
+          const writeRequest = wsRequests.find(
+            (request) => request._tag === WS_METHODS.terminalWrite,
+          );
+          expect(writeRequest).toMatchObject({
+            _tag: WS_METHODS.terminalWrite,
+            threadId: THREAD_ID,
+            data: "ng serve --port 4200\r",
+          });
+        },
+        { timeout: 8_000, interval: 16 },
+      );
+
+      await vi.waitFor(
+        () => {
+          const commandRequest = wsRequests.find(
+            (request) =>
+              request._tag === ORCHESTRATION_WS_METHODS.dispatchCommand &&
+              (request.command as { type?: string } | undefined)?.type === "thread.meta.update",
+          );
+          expect(commandRequest).toMatchObject({
+            _tag: ORCHESTRATION_WS_METHODS.dispatchCommand,
+            command: {
+              type: "thread.meta.update",
+              threadId: THREAD_ID,
+              devServerPort: 4200,
+            },
           });
         },
         { timeout: 8_000, interval: 16 },
