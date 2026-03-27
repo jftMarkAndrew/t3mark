@@ -1,5 +1,6 @@
 import { Schema } from "effect";
 import { PositiveInt, TrimmedNonEmptyString } from "./baseSchemas";
+import { BootstrapPackageManager } from "./orchestration";
 
 const PROJECT_SEARCH_ENTRIES_MAX_LIMIT = 200;
 const PROJECT_WRITE_FILE_PATH_MAX_LENGTH = 512;
@@ -37,3 +38,16 @@ export const ProjectWriteFileResult = Schema.Struct({
   relativePath: TrimmedNonEmptyString,
 });
 export type ProjectWriteFileResult = typeof ProjectWriteFileResult.Type;
+
+export const ProjectDetectBootstrapInput = Schema.Struct({
+  cwd: TrimmedNonEmptyString,
+});
+export type ProjectDetectBootstrapInput = typeof ProjectDetectBootstrapInput.Type;
+
+export const ProjectDetectBootstrapResult = Schema.Struct({
+  enabled: Schema.Boolean,
+  installCommand: Schema.NullOr(TrimmedNonEmptyString),
+  devCommand: Schema.NullOr(TrimmedNonEmptyString),
+  detectedPackageManager: Schema.NullOr(BootstrapPackageManager),
+});
+export type ProjectDetectBootstrapResult = typeof ProjectDetectBootstrapResult.Type;

@@ -183,6 +183,7 @@ export function projectEvent(
             workspaceRoot: payload.workspaceRoot,
             defaultModelSelection: payload.defaultModelSelection,
             scripts: payload.scripts,
+            bootstrap: payload.bootstrap ?? null,
             createdAt: payload.createdAt,
             updatedAt: payload.updatedAt,
             deletedAt: null,
@@ -215,6 +216,7 @@ export function projectEvent(
                     ? { defaultModelSelection: payload.defaultModelSelection }
                     : {}),
                   ...(payload.scripts !== undefined ? { scripts: payload.scripts } : {}),
+                  ...(payload.bootstrap !== undefined ? { bootstrap: payload.bootstrap } : {}),
                   updatedAt: payload.updatedAt,
                 }
               : project,
@@ -258,6 +260,10 @@ export function projectEvent(
             branch: payload.branch,
             worktreePath: payload.worktreePath,
             devServerPort: payload.devServerPort ?? null,
+            bootstrapStatus: payload.bootstrapStatus,
+            bootstrapCommand: payload.bootstrapCommand ?? null,
+            bootstrapLastError: payload.bootstrapLastError ?? null,
+            pendingLocalhostLaunch: payload.pendingLocalhostLaunch,
             latestTurn: null,
             createdAt: payload.createdAt,
             updatedAt: payload.updatedAt,
@@ -303,6 +309,18 @@ export function projectEvent(
             ...(payload.worktreePath !== undefined ? { worktreePath: payload.worktreePath } : {}),
             ...(payload.devServerPort !== undefined
               ? { devServerPort: payload.devServerPort }
+              : {}),
+            ...(payload.bootstrapStatus !== undefined
+              ? { bootstrapStatus: payload.bootstrapStatus }
+              : {}),
+            ...(payload.bootstrapCommand !== undefined
+              ? { bootstrapCommand: payload.bootstrapCommand }
+              : {}),
+            ...(payload.bootstrapLastError !== undefined
+              ? { bootstrapLastError: payload.bootstrapLastError }
+              : {}),
+            ...(payload.pendingLocalhostLaunch !== undefined
+              ? { pendingLocalhostLaunch: payload.pendingLocalhostLaunch }
               : {}),
             updatedAt: payload.updatedAt,
           }),

@@ -1,4 +1,6 @@
 import type {
+  BootstrapPackageManager,
+  ProjectBootstrapConfig,
   ProjectScript,
   ProjectScriptIcon,
   ResolvedKeybindingsConfig,
@@ -11,15 +13,18 @@ import {
   ListChecksIcon,
   PlayIcon,
   PlusIcon,
+  RocketIcon,
   SettingsIcon,
   WrenchIcon,
 } from "lucide-react";
 import React, { type FormEvent, type KeyboardEvent, useCallback, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 
 import {
   keybindingValueForCommand,
   decodeProjectScriptKeybindingRule,
 } from "~/lib/projectScriptKeybindings";
+import { projectDetectBootstrapQueryOptions } from "~/lib/projectReactQuery";
 import {
   commandForProjectScript,
   DEFAULT_LOCALHOST_BASE_PORT,
@@ -90,7 +95,16 @@ export interface NewProjectScriptInput {
   keybinding: string | null;
 }
 
+export interface NewProjectBootstrapInput {
+  enabled: boolean;
+  installCommand: string | null;
+  devCommand: string | null;
+  detectedPackageManager: BootstrapPackageManager | null;
+}
+
 interface ProjectScriptsControlProps {
+  projectCwd: string;
+  bootstrap: ProjectBootstrapConfig | null;
   scripts: ProjectScript[];
   keybindings: ResolvedKeybindingsConfig;
   preferredScriptId?: string | null;
@@ -98,6 +112,7 @@ interface ProjectScriptsControlProps {
   onAddScript: (input: NewProjectScriptInput) => Promise<void> | void;
   onUpdateScript: (scriptId: string, input: NewProjectScriptInput) => Promise<void> | void;
   onDeleteScript: (scriptId: string) => Promise<void> | void;
+  onSaveBootstrap: (input: NewProjectBootstrapInput) => Promise<void> | void;
 }
 
 function normalizeShortcutKeyToken(key: string): string | null {
@@ -152,6 +167,8 @@ function keybindingFromEvent(event: KeyboardEvent<HTMLInputElement>): string | n
 }
 
 export default function ProjectScriptsControl({
+  projectCwd,
+  bootstrap,
   scripts,
   keybindings,
   preferredScriptId = null,
@@ -159,10 +176,13 @@ export default function ProjectScriptsControl({
   onAddScript,
   onUpdateScript,
   onDeleteScript,
+  onSaveBootstrap,
 }: ProjectScriptsControlProps) {
   const addScriptFormId = React.useId();
+  const bootstrapFormId = React.useId();
   const [editingScriptId, setEditingScriptId] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [bootstrapDialogOpen, setBootstrapDialogOpen] = useState(false);
   const [name, setName] = useState("");
   const [command, setCommand] = useState("");
   const [icon, setIcon] = useState<ProjectScriptIcon>("play");
@@ -172,7 +192,19 @@ export default function ProjectScriptsControl({
   const [localhostBasePort, setLocalhostBasePort] = useState(String(DEFAULT_LOCALHOST_BASE_PORT));
   const [keybinding, setKeybinding] = useState("");
   const [validationError, setValidationError] = useState<string | null>(null);
+  const [bootstrapEnabled, setBootstrapEnabled] = useState(false);
+  const [bootstrapInstallCommand, setBootstrapInstallCommand] = useState("");
+  const [bootstrapDevCommand, setBootstrapDevCommand] = useState("");
+  const [bootstrapPackageManager, setBootstrapPackageManager] =
+    useState<BootstrapPackageManager | null>(null);
+  const [bootstrapValidationError, setBootstrapValidationError] = useState<string | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const bootstrapDetectionQuery = useQuery(
+    projectDetectBootstrapQueryOptions({
+      cwd: projectCwd,
+      enabled: bootstrapDialogOpen || bootstrap === null,
+    }),
+  );
 
   const primaryScript = useMemo(() => {
     if (preferredScriptId) {
@@ -292,6 +324,49 @@ export default function ProjectScriptsControl({
     void onDeleteScript(editingScriptId);
   }, [editingScriptId, onDeleteScript]);
 
+  const openBootstrapDialog = useCallback(() => {
+    const detected = bootstrapDetectionQuery.data;
+    setBootstrapEnabled(bootstrap?.enabled ?? detected?.enabled ?? false);
+    setBootstrapInstallCommand(bootstrap?.installCommand ?? detected?.installCommand ?? "");
+    setBootstrapDevCommand(bootstrap?.devCommand ?? detected?.devCommand ?? "");
+    setBootstrapPackageManager(
+      bootstrap?.detectedPackageManager ?? detected?.detectedPackageManager ?? null,
+    );
+    setBootstrapValidationError(null);
+    setBootstrapDialogOpen(true);
+  }, [bootstrap, bootstrapDetectionQuery.data]);
+
+  const submitBootstrap = useCallback(
+    async (event: FormEvent) => {
+      event.preventDefault();
+      const nextInstallCommand = bootstrapInstallCommand.trim();
+      const nextDevCommand = bootstrapDevCommand.trim();
+      if (bootstrapEnabled && nextInstallCommand.length === 0) {
+        setBootstrapValidationError("Bootstrap install command is required when enabled.");
+        return;
+      }
+      if (nextDevCommand.length > 0 && !projectScriptContainsPortPlaceholder(nextDevCommand)) {
+        setBootstrapValidationError('Bootstrap localhost command must include "{{port}}".');
+        return;
+      }
+      setBootstrapValidationError(null);
+      await onSaveBootstrap({
+        enabled: bootstrapEnabled,
+        installCommand: nextInstallCommand.length > 0 ? nextInstallCommand : null,
+        devCommand: nextDevCommand.length > 0 ? nextDevCommand : null,
+        detectedPackageManager: bootstrapPackageManager,
+      });
+      setBootstrapDialogOpen(false);
+    },
+    [
+      bootstrapDevCommand,
+      bootstrapEnabled,
+      bootstrapInstallCommand,
+      bootstrapPackageManager,
+      onSaveBootstrap,
+    ],
+  );
+
   return (
     <>
       {primaryScript ? (
@@ -366,17 +441,112 @@ export default function ProjectScriptsControl({
                 <PlusIcon className="size-4" />
                 Add action
               </MenuItem>
+              <MenuItem className={dropdownItemClassName} onClick={openBootstrapDialog}>
+                <RocketIcon className="size-4" />
+                Configure bootstrap
+              </MenuItem>
             </MenuPopup>
           </Menu>
         </Group>
       ) : (
-        <Button size="xs" variant="outline" onClick={openAddDialog} title="Add action">
-          <PlusIcon className="size-3.5" />
-          <span className="sr-only @sm/header-actions:not-sr-only @sm/header-actions:ml-0.5">
-            Add action
-          </span>
-        </Button>
+        <Group aria-label="Project scripts">
+          <Button size="xs" variant="outline" onClick={openAddDialog} title="Add action">
+            <PlusIcon className="size-3.5" />
+            <span className="sr-only @sm/header-actions:not-sr-only @sm/header-actions:ml-0.5">
+              Add action
+            </span>
+          </Button>
+          <GroupSeparator className="hidden @sm/header-actions:block" />
+          <Menu highlightItemOnHover={false}>
+            <MenuTrigger
+              render={<Button size="icon-xs" variant="outline" aria-label="Script actions" />}
+            >
+              <ChevronDownIcon className="size-4" />
+            </MenuTrigger>
+            <MenuPopup align="end">
+              <MenuItem className={dropdownItemClassName} onClick={openAddDialog}>
+                <PlusIcon className="size-4" />
+                Add action
+              </MenuItem>
+              <MenuItem className={dropdownItemClassName} onClick={openBootstrapDialog}>
+                <RocketIcon className="size-4" />
+                Configure bootstrap
+              </MenuItem>
+            </MenuPopup>
+          </Menu>
+        </Group>
       )}
+
+      <Dialog
+        open={bootstrapDialogOpen}
+        onOpenChange={(open) => {
+          setBootstrapDialogOpen(open);
+          if (!open) {
+            setBootstrapValidationError(null);
+          }
+        }}
+      >
+        <DialogPopup>
+          <DialogHeader>
+            <DialogTitle>Bootstrap</DialogTitle>
+            <DialogDescription>
+              Auto-prepare managed worktrees before localhost launches.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogPanel>
+            <form id={bootstrapFormId} className="space-y-4" onSubmit={submitBootstrap}>
+              <label className="flex items-center justify-between gap-3 rounded-md border border-border/70 px-3 py-2 text-sm">
+                <span>Enable worktree bootstrap</span>
+                <Switch
+                  checked={bootstrapEnabled}
+                  onCheckedChange={(checked) => setBootstrapEnabled(Boolean(checked))}
+                />
+              </label>
+              <div className="space-y-1.5">
+                <Label htmlFor="bootstrap-package-manager">Detected package manager</Label>
+                <Input
+                  id="bootstrap-package-manager"
+                  value={bootstrapPackageManager ?? ""}
+                  placeholder="Not detected"
+                  readOnly
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="bootstrap-install-command">Install command</Label>
+                <Input
+                  id="bootstrap-install-command"
+                  value={bootstrapInstallCommand}
+                  placeholder="npm ci"
+                  onChange={(event) => setBootstrapInstallCommand(event.target.value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="bootstrap-dev-command">Detected localhost command</Label>
+                <Input
+                  id="bootstrap-dev-command"
+                  value={bootstrapDevCommand}
+                  placeholder="npm run dev -- --port {{port}}"
+                  onChange={(event) => setBootstrapDevCommand(event.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Used as the default localhost command when no dedicated localhost action exists.
+                </p>
+              </div>
+              {bootstrapValidationError ? (
+                <p className="text-sm text-destructive">{bootstrapValidationError}</p>
+              ) : null}
+            </form>
+          </DialogPanel>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setBootstrapDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button form={bootstrapFormId} type="submit">
+              Save bootstrap
+            </Button>
+          </DialogFooter>
+        </DialogPopup>
+      </Dialog>
 
       <Dialog
         onOpenChange={(open) => {

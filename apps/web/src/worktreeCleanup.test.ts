@@ -27,6 +27,10 @@ function makeThread(overrides: Partial<Thread> = {}): Thread {
     branch: null,
     worktreePath: null,
     devServerPort: null,
+    bootstrapStatus: "idle",
+    bootstrapCommand: null,
+    bootstrapLastError: null,
+    pendingLocalhostLaunch: false,
     ...overrides,
   };
 }

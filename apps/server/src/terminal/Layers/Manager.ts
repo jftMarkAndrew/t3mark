@@ -577,19 +577,23 @@ export class TerminalManagerRuntime extends EventEmitter<TerminalManagerEvents> 
       const runtimeEnvChanged =
         JSON.stringify(currentRuntimeEnv) !== JSON.stringify(nextRuntimeEnv);
 
-      if (existing.cwd !== input.cwd || runtimeEnvChanged) {
+      const hasLiveProcess =
+        existing.process !== null &&
+        (existing.status === "running" || existing.status === "starting");
+
+      if (!hasLiveProcess && (existing.cwd !== input.cwd || runtimeEnvChanged)) {
         this.stopProcess(existing);
         existing.cwd = input.cwd;
         existing.runtimeEnv = nextRuntimeEnv;
         existing.history = "";
         existing.pendingHistoryControlSequence = "";
         await this.persistHistory(existing.threadId, existing.terminalId, existing.history);
-      } else if (existing.status === "exited" || existing.status === "error") {
+      } else if (!hasLiveProcess && (existing.status === "exited" || existing.status === "error")) {
         existing.runtimeEnv = nextRuntimeEnv;
         existing.history = "";
         existing.pendingHistoryControlSequence = "";
         await this.persistHistory(existing.threadId, existing.terminalId, existing.history);
-      } else if (currentRuntimeEnv !== nextRuntimeEnv) {
+      } else if (!hasLiveProcess && currentRuntimeEnv !== nextRuntimeEnv) {
         existing.runtimeEnv = nextRuntimeEnv;
       }
 

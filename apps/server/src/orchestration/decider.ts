@@ -7,6 +7,7 @@ import { Effect } from "effect";
 
 import { OrchestrationCommandInvariantError } from "./Errors.ts";
 import {
+  requireValidProjectBootstrap,
   requireValidProjectScripts,
   requireProject,
   requireProjectAbsent,
@@ -97,6 +98,12 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           scripts: command.scripts,
         });
       }
+      if (command.bootstrap !== undefined) {
+        yield* requireValidProjectBootstrap({
+          commandType: command.type,
+          bootstrap: command.bootstrap,
+        });
+      }
       const occurredAt = nowIso();
       return {
         ...withEventBase({
@@ -114,6 +121,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
             ? { defaultModelSelection: command.defaultModelSelection }
             : {}),
           ...(command.scripts !== undefined ? { scripts: command.scripts } : {}),
+          ...(command.bootstrap !== undefined ? { bootstrap: command.bootstrap } : {}),
           updatedAt: occurredAt,
         },
       };
@@ -170,6 +178,10 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           branch: command.branch,
           worktreePath: command.worktreePath,
           devServerPort: command.devServerPort ?? null,
+          bootstrapStatus: command.bootstrapStatus,
+          bootstrapCommand: command.bootstrapCommand ?? null,
+          bootstrapLastError: command.bootstrapLastError ?? null,
+          pendingLocalhostLaunch: command.pendingLocalhostLaunch,
           createdAt: command.createdAt,
           updatedAt: command.createdAt,
         },
@@ -222,6 +234,18 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           ...(command.branch !== undefined ? { branch: command.branch } : {}),
           ...(command.worktreePath !== undefined ? { worktreePath: command.worktreePath } : {}),
           ...(command.devServerPort !== undefined ? { devServerPort: command.devServerPort } : {}),
+          ...(command.bootstrapStatus !== undefined
+            ? { bootstrapStatus: command.bootstrapStatus }
+            : {}),
+          ...(command.bootstrapCommand !== undefined
+            ? { bootstrapCommand: command.bootstrapCommand }
+            : {}),
+          ...(command.bootstrapLastError !== undefined
+            ? { bootstrapLastError: command.bootstrapLastError }
+            : {}),
+          ...(command.pendingLocalhostLaunch !== undefined
+            ? { pendingLocalhostLaunch: command.pendingLocalhostLaunch }
+            : {}),
           updatedAt: occurredAt,
         },
       };

@@ -1,16 +1,18 @@
 import {
   type EditorId,
+  type ProjectBootstrapConfig,
   type ProjectScript,
   type ResolvedKeybindingsConfig,
   type ThreadId,
 } from "@t3tools/contracts";
 import { memo } from "react";
 import GitActionsControl from "../GitActionsControl";
-import { DiffIcon, RocketIcon, TerminalSquareIcon } from "lucide-react";
+import { AlertTriangleIcon, DiffIcon, RocketIcon, TerminalSquareIcon } from "lucide-react";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import ProjectScriptsControl, { type NewProjectScriptInput } from "../ProjectScriptsControl";
+import { type NewProjectBootstrapInput } from "../ProjectScriptsControl";
 import { Toggle } from "../ui/toggle";
 import { SidebarTrigger } from "../ui/sidebar";
 import { OpenInPicker } from "./OpenInPicker";
@@ -21,7 +23,9 @@ interface ChatHeaderProps {
   activeProjectName: string | undefined;
   isGitRepo: boolean;
   openInCwd: string | null;
+  activeProjectCwd: string | null;
   activeProjectScripts: ProjectScript[] | undefined;
+  activeProjectBootstrap: ProjectBootstrapConfig | null;
   preferredScriptId: string | null;
   keybindings: ResolvedKeybindingsConfig;
   availableEditors: ReadonlyArray<EditorId>;
@@ -38,7 +42,11 @@ interface ChatHeaderProps {
   onAddProjectScript: (input: NewProjectScriptInput) => Promise<void>;
   onUpdateProjectScript: (scriptId: string, input: NewProjectScriptInput) => Promise<void>;
   onDeleteProjectScript: (scriptId: string) => Promise<void>;
+  onSaveProjectBootstrap: (input: NewProjectBootstrapInput) => Promise<void>;
   onRunLocalhostLauncher: () => void;
+  bootstrapStatus: "idle" | "running" | "ready" | "failed" | null;
+  bootstrapError: string | null;
+  onRetryBootstrap: () => void;
   onToggleTerminal: () => void;
   onToggleDiff: () => void;
 }
@@ -49,7 +57,9 @@ export const ChatHeader = memo(function ChatHeader({
   activeProjectName,
   isGitRepo,
   openInCwd,
+  activeProjectCwd,
   activeProjectScripts,
+  activeProjectBootstrap,
   preferredScriptId,
   keybindings,
   availableEditors,
@@ -66,7 +76,11 @@ export const ChatHeader = memo(function ChatHeader({
   onAddProjectScript,
   onUpdateProjectScript,
   onDeleteProjectScript,
+  onSaveProjectBootstrap,
   onRunLocalhostLauncher,
+  bootstrapStatus,
+  bootstrapError,
+  onRetryBootstrap,
   onToggleTerminal,
   onToggleDiff,
 }: ChatHeaderProps) {
@@ -94,6 +108,8 @@ export const ChatHeader = memo(function ChatHeader({
       <div className="@container/header-actions flex min-w-0 flex-1 items-center justify-end gap-2 @sm/header-actions:gap-3">
         {activeProjectScripts && (
           <ProjectScriptsControl
+            projectCwd={activeProjectCwd ?? ""}
+            bootstrap={activeProjectBootstrap}
             scripts={activeProjectScripts}
             keybindings={keybindings}
             preferredScriptId={preferredScriptId}
@@ -101,8 +117,39 @@ export const ChatHeader = memo(function ChatHeader({
             onAddScript={onAddProjectScript}
             onUpdateScript={onUpdateProjectScript}
             onDeleteScript={onDeleteProjectScript}
+            onSaveBootstrap={onSaveProjectBootstrap}
           />
         )}
+        {bootstrapStatus ? (
+          bootstrapStatus === "failed" ? (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    className="shrink-0"
+                    variant="outline"
+                    size="xs"
+                    onClick={onRetryBootstrap}
+                  >
+                    <AlertTriangleIcon className="size-3" />
+                    <span>Bootstrap failed</span>
+                  </Button>
+                }
+              />
+              <TooltipPopup side="bottom">
+                {bootstrapError ?? "Bootstrap failed. Click to retry."}
+              </TooltipPopup>
+            </Tooltip>
+          ) : (
+            <Badge variant="outline" className="shrink-0">
+              {bootstrapStatus === "running"
+                ? "Preparing"
+                : bootstrapStatus === "ready"
+                  ? "Ready"
+                  : "Idle"}
+            </Badge>
+          )
+        ) : null}
         {activeProjectName && (
           <OpenInPicker
             keybindings={keybindings}

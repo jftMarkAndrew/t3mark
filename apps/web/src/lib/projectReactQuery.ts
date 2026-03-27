@@ -1,9 +1,10 @@
-import type { ProjectSearchEntriesResult } from "@t3tools/contracts";
+import type { ProjectDetectBootstrapResult, ProjectSearchEntriesResult } from "@t3tools/contracts";
 import { queryOptions } from "@tanstack/react-query";
 import { ensureNativeApi } from "~/nativeApi";
 
 export const projectQueryKeys = {
   all: ["projects"] as const,
+  detectBootstrap: (cwd: string | null) => ["projects", "detect-bootstrap", cwd] as const,
   searchEntries: (cwd: string | null, query: string, limit: number) =>
     ["projects", "search-entries", cwd, query, limit] as const,
 };
@@ -14,6 +15,32 @@ const EMPTY_SEARCH_ENTRIES_RESULT: ProjectSearchEntriesResult = {
   entries: [],
   truncated: false,
 };
+const EMPTY_BOOTSTRAP_RESULT: ProjectDetectBootstrapResult = {
+  enabled: false,
+  installCommand: null,
+  devCommand: null,
+  detectedPackageManager: null,
+};
+
+export function projectDetectBootstrapQueryOptions(input: {
+  cwd: string | null;
+  enabled?: boolean;
+  staleTime?: number;
+}) {
+  return queryOptions({
+    queryKey: projectQueryKeys.detectBootstrap(input.cwd),
+    queryFn: async () => {
+      const api = ensureNativeApi();
+      if (!input.cwd) {
+        throw new Error("Project bootstrap detection is unavailable.");
+      }
+      return api.projects.detectBootstrap({ cwd: input.cwd });
+    },
+    enabled: (input.enabled ?? true) && input.cwd !== null,
+    staleTime: input.staleTime ?? DEFAULT_SEARCH_ENTRIES_STALE_TIME,
+    placeholderData: (previous) => previous ?? EMPTY_BOOTSTRAP_RESULT,
+  });
+}
 
 export function projectSearchEntriesQueryOptions(input: {
   cwd: string | null;

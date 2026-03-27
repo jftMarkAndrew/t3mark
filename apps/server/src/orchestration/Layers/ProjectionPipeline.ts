@@ -364,6 +364,7 @@ const makeOrchestrationProjectionPipeline = Effect.gen(function* () {
             workspaceRoot: event.payload.workspaceRoot,
             defaultModelSelection: event.payload.defaultModelSelection,
             scripts: event.payload.scripts,
+            bootstrap: event.payload.bootstrap ?? null,
             createdAt: event.payload.createdAt,
             updatedAt: event.payload.updatedAt,
             deletedAt: null,
@@ -387,6 +388,9 @@ const makeOrchestrationProjectionPipeline = Effect.gen(function* () {
               ? { defaultModelSelection: event.payload.defaultModelSelection }
               : {}),
             ...(event.payload.scripts !== undefined ? { scripts: event.payload.scripts } : {}),
+            ...(event.payload.bootstrap !== undefined
+              ? { bootstrap: event.payload.bootstrap }
+              : {}),
             updatedAt: event.payload.updatedAt,
           });
           return;
@@ -426,6 +430,10 @@ const makeOrchestrationProjectionPipeline = Effect.gen(function* () {
             branch: event.payload.branch,
             worktreePath: event.payload.worktreePath,
             devServerPort: event.payload.devServerPort ?? null,
+            bootstrapStatus: event.payload.bootstrapStatus ?? "idle",
+            bootstrapCommand: event.payload.bootstrapCommand ?? null,
+            bootstrapLastError: event.payload.bootstrapLastError ?? null,
+            pendingLocalhostLaunch: event.payload.pendingLocalhostLaunch ?? false,
             latestTurnId: null,
             createdAt: event.payload.createdAt,
             updatedAt: event.payload.updatedAt,
@@ -452,6 +460,18 @@ const makeOrchestrationProjectionPipeline = Effect.gen(function* () {
               : {}),
             ...(event.payload.devServerPort !== undefined
               ? { devServerPort: event.payload.devServerPort }
+              : {}),
+            ...(event.payload.bootstrapStatus !== undefined
+              ? { bootstrapStatus: event.payload.bootstrapStatus }
+              : {}),
+            ...(event.payload.bootstrapCommand !== undefined
+              ? { bootstrapCommand: event.payload.bootstrapCommand }
+              : {}),
+            ...(event.payload.bootstrapLastError !== undefined
+              ? { bootstrapLastError: event.payload.bootstrapLastError }
+              : {}),
+            ...(event.payload.pendingLocalhostLaunch !== undefined
+              ? { pendingLocalhostLaunch: event.payload.pendingLocalhostLaunch }
               : {}),
             updatedAt: event.payload.updatedAt,
           });

@@ -46,7 +46,13 @@ import {
 } from "@t3tools/contracts/settings";
 import { isElectron } from "../env";
 import { APP_STAGE_LABEL, APP_VERSION } from "../branding";
-import { isLinuxPlatform, isMacPlatform, newCommandId, newProjectId } from "../lib/utils";
+import {
+  isLinuxPlatform,
+  isMacPlatform,
+  newCommandId,
+  newProjectId,
+  newThreadId,
+} from "../lib/utils";
 import { useStore } from "../store";
 import { shortcutLabelForCommand } from "../keybindings";
 import { derivePendingApprovals, derivePendingUserInputs } from "../session-logic";
@@ -568,15 +574,37 @@ export default function Sidebar() {
       if (!api) return;
 
       try {
+        const project = projects.find((entry) => entry.id === input.projectId);
+        if (!project) {
+          throw new Error("Project not found.");
+        }
         const result = await api.git.preparePullRequestThread({
           cwd: input.projectCwd,
           reference: input.reference,
           mode: "worktree",
         });
-        await handleNewThread(input.projectId, {
+        clearProjectDraftThreadId(input.projectId);
+        const threadId = newThreadId();
+        const createdAt = new Date().toISOString();
+        await api.orchestration.dispatchCommand({
+          type: "thread.create",
+          commandId: newCommandId(),
+          threadId,
+          projectId: input.projectId,
+          title: result.pullRequest.title,
+          modelSelection: project.defaultModelSelection ?? {
+            provider: "codex",
+            model: DEFAULT_MODEL_BY_PROVIDER.codex,
+          },
+          runtimeMode: "full-access",
+          interactionMode: "default",
           branch: result.branch,
           worktreePath: result.worktreePath,
-          envMode: result.worktreePath ? "worktree" : "local",
+          createdAt,
+        });
+        await navigate({
+          to: "/$threadId",
+          params: { threadId },
         });
         await invalidateGitQueries(queryClient);
       } catch (error) {
@@ -587,7 +615,7 @@ export default function Sidebar() {
         });
       }
     },
-    [handleNewThread, queryClient],
+    [clearProjectDraftThreadId, navigate, projects, queryClient],
   );
 
   const focusMostRecentThreadForProject = useCallback(

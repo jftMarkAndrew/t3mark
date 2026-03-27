@@ -146,12 +146,35 @@ export const ProjectScript = Schema.Struct({
 });
 export type ProjectScript = typeof ProjectScript.Type;
 
+export const BootstrapPackageManager = Schema.Literals(["pnpm", "npm", "yarn", "bun"]);
+export type BootstrapPackageManager = typeof BootstrapPackageManager.Type;
+
+export const ProjectBootstrapConfig = Schema.Struct({
+  enabled: Schema.optional(Schema.Boolean).pipe(Schema.withDecodingDefault(() => false)),
+  installCommand: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)).pipe(
+    Schema.withDecodingDefault(() => null),
+  ),
+  devCommand: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)).pipe(
+    Schema.withDecodingDefault(() => null),
+  ),
+  detectedPackageManager: Schema.optional(Schema.NullOr(BootstrapPackageManager)).pipe(
+    Schema.withDecodingDefault(() => null),
+  ),
+});
+export type ProjectBootstrapConfig = typeof ProjectBootstrapConfig.Type;
+
+export const ThreadBootstrapStatus = Schema.Literals(["idle", "running", "ready", "failed"]);
+export type ThreadBootstrapStatus = typeof ThreadBootstrapStatus.Type;
+
 export const OrchestrationProject = Schema.Struct({
   id: ProjectId,
   title: TrimmedNonEmptyString,
   workspaceRoot: TrimmedNonEmptyString,
   defaultModelSelection: Schema.NullOr(ModelSelection),
   scripts: Schema.Array(ProjectScript),
+  bootstrap: Schema.optional(Schema.NullOr(ProjectBootstrapConfig)).pipe(
+    Schema.withDecodingDefault(() => null),
+  ),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
   deletedAt: Schema.NullOr(IsoDateTime),
@@ -289,6 +312,18 @@ export const OrchestrationThread = Schema.Struct({
   devServerPort: Schema.optional(Schema.NullOr(Schema.Int)).pipe(
     Schema.withDecodingDefault(() => null),
   ),
+  bootstrapStatus: Schema.optional(ThreadBootstrapStatus).pipe(
+    Schema.withDecodingDefault(() => "idle"),
+  ),
+  bootstrapCommand: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)).pipe(
+    Schema.withDecodingDefault(() => null),
+  ),
+  bootstrapLastError: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)).pipe(
+    Schema.withDecodingDefault(() => null),
+  ),
+  pendingLocalhostLaunch: Schema.optional(Schema.Boolean).pipe(
+    Schema.withDecodingDefault(() => false),
+  ),
   latestTurn: Schema.NullOr(OrchestrationLatestTurn),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
@@ -327,6 +362,7 @@ const ProjectMetaUpdateCommand = Schema.Struct({
   workspaceRoot: Schema.optional(TrimmedNonEmptyString),
   defaultModelSelection: Schema.optional(Schema.NullOr(ModelSelection)),
   scripts: Schema.optional(Schema.Array(ProjectScript)),
+  bootstrap: Schema.optional(Schema.NullOr(ProjectBootstrapConfig)),
 });
 
 const ProjectDeleteCommand = Schema.Struct({
@@ -351,6 +387,18 @@ const ThreadCreateCommand = Schema.Struct({
   devServerPort: Schema.optional(Schema.NullOr(Schema.Int)).pipe(
     Schema.withDecodingDefault(() => null),
   ),
+  bootstrapStatus: Schema.optional(ThreadBootstrapStatus).pipe(
+    Schema.withDecodingDefault(() => "idle"),
+  ),
+  bootstrapCommand: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)).pipe(
+    Schema.withDecodingDefault(() => null),
+  ),
+  bootstrapLastError: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)).pipe(
+    Schema.withDecodingDefault(() => null),
+  ),
+  pendingLocalhostLaunch: Schema.optional(Schema.Boolean).pipe(
+    Schema.withDecodingDefault(() => false),
+  ),
   createdAt: IsoDateTime,
 });
 
@@ -369,6 +417,10 @@ const ThreadMetaUpdateCommand = Schema.Struct({
   branch: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   worktreePath: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   devServerPort: Schema.optional(Schema.NullOr(Schema.Int)),
+  bootstrapStatus: Schema.optional(ThreadBootstrapStatus),
+  bootstrapCommand: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
+  bootstrapLastError: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
+  pendingLocalhostLaunch: Schema.optional(Schema.Boolean),
 });
 
 const ThreadRuntimeModeSetCommand = Schema.Struct({
@@ -617,6 +669,9 @@ export const ProjectCreatedPayload = Schema.Struct({
   workspaceRoot: TrimmedNonEmptyString,
   defaultModelSelection: Schema.NullOr(ModelSelection),
   scripts: Schema.Array(ProjectScript),
+  bootstrap: Schema.optional(Schema.NullOr(ProjectBootstrapConfig)).pipe(
+    Schema.withDecodingDefault(() => null),
+  ),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });
@@ -627,6 +682,7 @@ export const ProjectMetaUpdatedPayload = Schema.Struct({
   workspaceRoot: Schema.optional(TrimmedNonEmptyString),
   defaultModelSelection: Schema.optional(Schema.NullOr(ModelSelection)),
   scripts: Schema.optional(Schema.Array(ProjectScript)),
+  bootstrap: Schema.optional(Schema.NullOr(ProjectBootstrapConfig)),
   updatedAt: IsoDateTime,
 });
 
@@ -649,6 +705,18 @@ export const ThreadCreatedPayload = Schema.Struct({
   devServerPort: Schema.optional(Schema.NullOr(Schema.Int)).pipe(
     Schema.withDecodingDefault(() => null),
   ),
+  bootstrapStatus: Schema.optional(ThreadBootstrapStatus).pipe(
+    Schema.withDecodingDefault(() => "idle"),
+  ),
+  bootstrapCommand: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)).pipe(
+    Schema.withDecodingDefault(() => null),
+  ),
+  bootstrapLastError: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)).pipe(
+    Schema.withDecodingDefault(() => null),
+  ),
+  pendingLocalhostLaunch: Schema.optional(Schema.Boolean).pipe(
+    Schema.withDecodingDefault(() => false),
+  ),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });
@@ -665,6 +733,10 @@ export const ThreadMetaUpdatedPayload = Schema.Struct({
   branch: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   worktreePath: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   devServerPort: Schema.optional(Schema.NullOr(Schema.Int)),
+  bootstrapStatus: Schema.optional(ThreadBootstrapStatus),
+  bootstrapCommand: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
+  bootstrapLastError: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
+  pendingLocalhostLaunch: Schema.optional(Schema.Boolean),
   updatedAt: IsoDateTime,
 });
 

@@ -6,6 +6,7 @@ import {
   OrchestrationCheckpointFile,
   OrchestrationProposedPlanId,
   OrchestrationReadModel,
+  ProjectBootstrapConfig,
   ProjectScript,
   ThreadId,
   TurnId,
@@ -48,6 +49,7 @@ const ProjectionProjectDbRowSchema = ProjectionProject.mapFields(
   Struct.assign({
     defaultModelSelection: Schema.NullOr(Schema.fromJsonString(ModelSelection)),
     scripts: Schema.fromJsonString(Schema.Array(ProjectScript)),
+    bootstrap: Schema.NullOr(Schema.fromJsonString(ProjectBootstrapConfig)),
   }),
 );
 const ProjectionThreadMessageDbRowSchema = ProjectionThreadMessage.mapFields(
@@ -60,6 +62,7 @@ const ProjectionThreadProposedPlanDbRowSchema = ProjectionThreadProposedPlan;
 const ProjectionThreadDbRowSchema = ProjectionThread.mapFields(
   Struct.assign({
     modelSelection: Schema.fromJsonString(ModelSelection),
+    pendingLocalhostLaunch: Schema.Number,
   }),
 );
 const ProjectionThreadActivityDbRowSchema = ProjectionThreadActivity.mapFields(
@@ -149,6 +152,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           workspace_root AS "workspaceRoot",
           default_model_selection_json AS "defaultModelSelection",
           scripts_json AS "scripts",
+          bootstrap_json AS "bootstrap",
           created_at AS "createdAt",
           updated_at AS "updatedAt",
           deleted_at AS "deletedAt"
@@ -172,6 +176,10 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           branch,
           worktree_path AS "worktreePath",
           dev_server_port AS "devServerPort",
+          bootstrap_status AS "bootstrapStatus",
+          bootstrap_command AS "bootstrapCommand",
+          bootstrap_last_error AS "bootstrapLastError",
+          pending_localhost_launch AS "pendingLocalhostLaunch",
           latest_turn_id AS "latestTurnId",
           created_at AS "createdAt",
           updated_at AS "updatedAt",
@@ -544,6 +552,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
             workspaceRoot: row.workspaceRoot,
             defaultModelSelection: row.defaultModelSelection,
             scripts: row.scripts,
+            bootstrap: row.bootstrap,
             createdAt: row.createdAt,
             updatedAt: row.updatedAt,
             deletedAt: row.deletedAt,
@@ -559,6 +568,10 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
             branch: row.branch,
             worktreePath: row.worktreePath,
             devServerPort: row.devServerPort,
+            bootstrapStatus: row.bootstrapStatus,
+            bootstrapCommand: row.bootstrapCommand,
+            bootstrapLastError: row.bootstrapLastError,
+            pendingLocalhostLaunch: row.pendingLocalhostLaunch !== 0,
             latestTurn: latestTurnByThread.get(row.threadId) ?? null,
             createdAt: row.createdAt,
             updatedAt: row.updatedAt,

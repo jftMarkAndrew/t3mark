@@ -28,7 +28,11 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useDebouncedValue } from "@tanstack/react-pacer";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { gitBranchesQueryOptions, gitCreateWorktreeMutationOptions } from "~/lib/gitReactQuery";
-import { projectSearchEntriesQueryOptions } from "~/lib/projectReactQuery";
+import {
+  projectDetectBootstrapQueryOptions,
+  projectQueryKeys,
+  projectSearchEntriesQueryOptions,
+} from "~/lib/projectReactQuery";
 import { serverConfigQueryOptions, serverQueryKeys } from "~/lib/serverReactQuery";
 import { isElectron } from "../env";
 import { parseDiffRouteSearch, stripDiffSearchParams } from "../diffRouteSearch";
@@ -104,7 +108,7 @@ import { cn, randomUUID } from "~/lib/utils";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import { toastManager } from "./ui/toast";
 import { decodeProjectScriptKeybindingRule } from "~/lib/projectScriptKeybindings";
-import { type NewProjectScriptInput } from "./ProjectScriptsControl";
+import { type NewProjectBootstrapInput, type NewProjectScriptInput } from "./ProjectScriptsControl";
 import {
   commandForProjectScript,
   DEFAULT_LOCALHOST_BASE_PORT,
@@ -211,6 +215,8 @@ function formatOutgoingPrompt(params: {
 const COMPOSER_PATH_QUERY_DEBOUNCE_MS = 120;
 const SCRIPT_TERMINAL_COLS = 120;
 const SCRIPT_TERMINAL_ROWS = 30;
+const BOOTSTRAP_TERMINAL_ID = "bootstrap";
+const BOOTSTRAP_EXIT_SENTINEL = "__T3_BOOTSTRAP_EXIT_CODE__:";
 
 function nextAvailableDevServerPort(input: {
   threads: ReadonlyArray<{ projectId: ProjectId; id: ThreadId; devServerPort: number | null }>;
@@ -352,6 +358,9 @@ export default function ChatView({ threadId }: ChatViewProps) {
   const [localDraftErrorsByThreadId, setLocalDraftErrorsByThreadId] = useState<
     Record<ThreadId, string | null>
   >({});
+  const [draftDevServerPortByThreadId, setDraftDevServerPortByThreadId] = useState<
+    Partial<Record<ThreadId, number>>
+  >({});
   const [sendPhase, setSendPhase] = useState<SendPhase>("idle");
   const [sendStartedAt, setSendStartedAt] = useState<string | null>(null);
   const [isConnecting, _setIsConnecting] = useState(false);
@@ -418,6 +427,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
   const sendInFlightRef = useRef(false);
   const dragDepthRef = useRef(0);
   const terminalOpenByThreadRef = useRef<Record<string, boolean>>({});
+  const bootstrapTerminalOutputBufferRef = useRef<Record<string, string>>({});
   const setMessagesScrollContainerRef = useCallback((element: HTMLDivElement | null) => {
     messagesScrollRef.current = element;
     setMessagesScrollElement(element);
@@ -521,23 +531,75 @@ export default function ChatView({ threadId }: ChatViewProps) {
   );
   const latestTurnSettled = isLatestTurnSettled(activeLatestTurn, activeThread?.session ?? null);
   const activeProject = projects.find((p) => p.id === activeThread?.projectId);
+  const bootstrapDetectionQuery = useQuery(
+    projectDetectBootstrapQueryOptions({
+      cwd: activeThread?.worktreePath ?? activeProject?.cwd ?? null,
+      enabled: activeProject !== undefined,
+    }),
+  );
+  const effectiveBootstrapConfig = useMemo(() => {
+    if (!activeProject) {
+      return null;
+    }
+    return activeProject.bootstrap ?? bootstrapDetectionQuery.data ?? null;
+  }, [activeProject, bootstrapDetectionQuery.data]);
   const localhostLauncherScript = useMemo(
     () => (activeProject ? localhostLauncherProjectScript(activeProject.scripts) : null),
     [activeProject],
   );
+  const effectiveLocalhostLauncherScript = useMemo(() => {
+    if (localhostLauncherScript) {
+      return localhostLauncherScript;
+    }
+    if (!effectiveBootstrapConfig?.devCommand) {
+      return null;
+    }
+    return {
+      id: "bootstrap-localhost",
+      name: "Localhost",
+      command: effectiveBootstrapConfig.devCommand,
+      icon: "play",
+      runOnWorktreeCreate: false,
+      runAsLocalhostLauncher: true,
+      localhostBasePort: DEFAULT_LOCALHOST_BASE_PORT,
+    } satisfies ProjectScript;
+  }, [effectiveBootstrapConfig?.devCommand, localhostLauncherScript]);
   const localhostLauncherDisabledReason = useMemo(() => {
-    if (!localhostLauncherScript) return null;
-    if (!serverThread) return "Localhost launcher is available after the thread has been created.";
-    if (!serverThread.worktreePath) {
+    if (!effectiveLocalhostLauncherScript) return null;
+    if (!activeThread?.worktreePath) {
       return "Localhost launcher requires a managed worktree thread.";
     }
+    if (serverThread?.bootstrapStatus === "running" && serverThread.pendingLocalhostLaunch) {
+      return "Launching after bootstrap completes.";
+    }
+    if (serverThread?.bootstrapStatus === "failed") {
+      return serverThread.bootstrapLastError ?? "Bootstrap failed. Click to retry.";
+    }
     return null;
-  }, [localhostLauncherScript, serverThread]);
+  }, [
+    activeThread?.worktreePath,
+    effectiveLocalhostLauncherScript,
+    serverThread?.bootstrapLastError,
+    serverThread?.bootstrapStatus,
+    serverThread?.pendingLocalhostLaunch,
+  ]);
   const localhostLauncherLabel = useMemo(() => {
-    if (!localhostLauncherScript) return "Localhost";
-    const port = serverThread?.devServerPort ?? null;
-    return port === null ? localhostLauncherScript.name : `Localhost ${port}`;
-  }, [localhostLauncherScript, serverThread?.devServerPort]);
+    if (!effectiveLocalhostLauncherScript) return "Localhost";
+    const port =
+      serverThread?.devServerPort ??
+      (activeThread ? (draftDevServerPortByThreadId[activeThread.id] ?? null) : null);
+    if (serverThread?.bootstrapStatus === "running" && serverThread.pendingLocalhostLaunch) {
+      return port === null ? "Preparing" : `Preparing ${port}`;
+    }
+    return port === null ? effectiveLocalhostLauncherScript.name : `Localhost ${port}`;
+  }, [
+    activeThread,
+    draftDevServerPortByThreadId,
+    effectiveLocalhostLauncherScript,
+    serverThread?.bootstrapStatus,
+    serverThread?.pendingLocalhostLaunch,
+    serverThread?.devServerPort,
+  ]);
 
   const openPullRequestDialog = useCallback(
     (reference?: string) => {
@@ -1381,6 +1443,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
         worktreePath?: string | null;
         commandOverride?: string;
         preferNewTerminal?: boolean;
+        terminalId?: string;
         rememberAsLastInvoked?: boolean;
       },
     ) => {
@@ -1398,16 +1461,22 @@ export default function ChatView({ threadId }: ChatViewProps) {
         terminalState.terminalIds[0] ||
         DEFAULT_THREAD_TERMINAL_ID;
       const isBaseTerminalBusy = terminalState.runningTerminalIds.includes(baseTerminalId);
-      const wantsNewTerminal = Boolean(options?.preferNewTerminal) || isBaseTerminalBusy;
+      const requestedTerminalId = options?.terminalId?.trim() || null;
+      const terminalAlreadyExists =
+        requestedTerminalId !== null && terminalState.terminalIds.includes(requestedTerminalId);
+      const wantsNewTerminal =
+        requestedTerminalId !== null
+          ? !terminalAlreadyExists
+          : Boolean(options?.preferNewTerminal) || isBaseTerminalBusy;
       const shouldCreateNewTerminal = wantsNewTerminal;
-      const targetTerminalId = shouldCreateNewTerminal
-        ? `terminal-${randomUUID()}`
-        : baseTerminalId;
+      const targetTerminalId =
+        requestedTerminalId ??
+        (shouldCreateNewTerminal ? `terminal-${randomUUID()}` : baseTerminalId);
 
       setTerminalOpen(true);
       if (shouldCreateNewTerminal) {
         storeNewTerminal(activeThreadId, targetTerminalId);
-      } else {
+      } else if (requestedTerminalId === null || requestedTerminalId === targetTerminalId) {
         storeSetActiveTerminal(activeThreadId, targetTerminalId);
       }
       setTerminalFocusRequestId((value) => value + 1);
@@ -1464,47 +1533,307 @@ export default function ChatView({ threadId }: ChatViewProps) {
       terminalState.terminalIds,
     ],
   );
-  const runLocalhostLauncher = useCallback(async () => {
-    const api = readNativeApi();
-    if (!api || !activeProject || !serverThread) return;
-
-    const launcherScript = localhostLauncherProjectScript(activeProject.scripts);
-    if (!launcherScript || !serverThread.worktreePath) {
-      return;
-    }
-
-    const basePort = launcherScript.localhostBasePort ?? DEFAULT_LOCALHOST_BASE_PORT;
-    const assignedPort =
-      serverThread.devServerPort ??
-      nextAvailableDevServerPort({
-        threads,
-        projectId: activeProject.id,
-        threadId: serverThread.id,
-        basePort,
-      });
-
-    if (serverThread.devServerPort !== assignedPort) {
+  const updateBootstrapThreadState = useCallback(
+    async (patch: {
+      bootstrapStatus?: "idle" | "running" | "ready" | "failed";
+      bootstrapCommand?: string | null;
+      bootstrapLastError?: string | null;
+      pendingLocalhostLaunch?: boolean;
+    }) => {
+      const api = readNativeApi();
+      if (!api || !serverThread) {
+        return;
+      }
       await api.orchestration.dispatchCommand({
         type: "thread.meta.update",
         commandId: newCommandId(),
         threadId: serverThread.id,
-        devServerPort: assignedPort,
+        ...patch,
       });
-    }
+    },
+    [serverThread],
+  );
+  const runBootstrap = useCallback(
+    async (options?: { queueLocalhost?: boolean }) => {
+      const api = readNativeApi();
+      if (!api || !activeProject || !activeThread?.worktreePath || !serverThread) {
+        return false;
+      }
+      const installCommand = effectiveBootstrapConfig?.installCommand ?? null;
+      if (!effectiveBootstrapConfig?.enabled || !installCommand) {
+        await updateBootstrapThreadState({
+          bootstrapStatus: "failed",
+          bootstrapCommand: installCommand,
+          bootstrapLastError: "Bootstrap is not configured for this worktree.",
+          pendingLocalhostLaunch: false,
+        });
+        return false;
+      }
 
-    await runProjectScript(launcherScript, {
-      cwd: serverThread.worktreePath,
-      worktreePath: serverThread.worktreePath,
-      commandOverride: renderProjectScriptCommand({
-        command: launcherScript.command,
-        port: assignedPort,
-      }),
-      env: {
-        T3CODE_LOCALHOST_PORT: String(assignedPort),
-        T3CODE_LOCALHOST_URL: `http://localhost:${assignedPort}`,
-      },
+      await updateBootstrapThreadState({
+        bootstrapStatus: "running",
+        bootstrapCommand: installCommand,
+        bootstrapLastError: null,
+        pendingLocalhostLaunch: options?.queueLocalhost ?? serverThread.pendingLocalhostLaunch,
+      });
+      bootstrapTerminalOutputBufferRef.current[serverThread.id] = "";
+
+      await runProjectScript(
+        {
+          id: "bootstrap-install",
+          name: "Bootstrap",
+          command: installCommand,
+          icon: "configure",
+          runOnWorktreeCreate: false,
+          runAsLocalhostLauncher: false,
+          localhostBasePort: null,
+        },
+        {
+          cwd: activeThread.worktreePath,
+          worktreePath: activeThread.worktreePath,
+          terminalId: BOOTSTRAP_TERMINAL_ID,
+          rememberAsLastInvoked: false,
+          commandOverride: `{ ${installCommand}; }; printf '\\n${BOOTSTRAP_EXIT_SENTINEL}%s\\n' "$?"`,
+        },
+      );
+
+      return true;
+    },
+    [
+      activeProject,
+      activeThread?.worktreePath,
+      effectiveBootstrapConfig?.enabled,
+      effectiveBootstrapConfig?.installCommand,
+      runProjectScript,
+      serverThread,
+      updateBootstrapThreadState,
+    ],
+  );
+  const launchLocalhostLauncher = useCallback(
+    async (script?: ProjectScript) => {
+      const api = readNativeApi();
+      if (!api || !activeProject || !activeThread) return;
+
+      const launcherScript =
+        script && script.runAsLocalhostLauncher ? script : effectiveLocalhostLauncherScript;
+      const targetWorktreePath = activeThread.worktreePath;
+      if (!launcherScript || !targetWorktreePath) {
+        return;
+      }
+
+      const basePort = launcherScript.localhostBasePort ?? DEFAULT_LOCALHOST_BASE_PORT;
+      const draftPort = draftDevServerPortByThreadId[activeThread.id] ?? null;
+      const assignedPort =
+        serverThread?.devServerPort ??
+        draftPort ??
+        nextAvailableDevServerPort({
+          threads: [
+            ...threads,
+            ...Object.entries(draftDevServerPortByThreadId).map(([id, port]) => ({
+              id: id as ThreadId,
+              projectId: activeProject.id,
+              devServerPort: port ?? null,
+            })),
+          ],
+          projectId: activeProject.id,
+          threadId: activeThread.id,
+          basePort,
+        });
+
+      if (serverThread && serverThread.devServerPort !== assignedPort) {
+        await api.orchestration.dispatchCommand({
+          type: "thread.meta.update",
+          commandId: newCommandId(),
+          threadId: serverThread.id,
+          devServerPort: assignedPort,
+        });
+      } else if (!serverThread) {
+        setDraftDevServerPortByThreadId((current) => {
+          if (current[activeThread.id] === assignedPort) return current;
+          return { ...current, [activeThread.id]: assignedPort };
+        });
+      }
+
+      await runProjectScript(launcherScript, {
+        cwd: targetWorktreePath,
+        worktreePath: targetWorktreePath,
+        commandOverride: renderProjectScriptCommand({
+          command: launcherScript.command,
+          port: assignedPort,
+        }),
+        env: {
+          T3CODE_LOCALHOST_PORT: String(assignedPort),
+          T3CODE_LOCALHOST_URL: `http://localhost:${assignedPort}`,
+        },
+      });
+    },
+    [
+      activeProject,
+      activeThread,
+      draftDevServerPortByThreadId,
+      effectiveLocalhostLauncherScript,
+      runProjectScript,
+      serverThread,
+      threads,
+    ],
+  );
+  const runLocalhostLauncher = useCallback(
+    async (script?: ProjectScript) => {
+      const launcherScript =
+        script && script.runAsLocalhostLauncher ? script : effectiveLocalhostLauncherScript;
+      if (!launcherScript || !activeThread?.worktreePath) {
+        return;
+      }
+
+      if (
+        !serverThread ||
+        !effectiveBootstrapConfig?.enabled ||
+        !effectiveBootstrapConfig.installCommand
+      ) {
+        await launchLocalhostLauncher(launcherScript);
+        return;
+      }
+
+      if (serverThread.bootstrapStatus === "ready") {
+        if (serverThread.pendingLocalhostLaunch) {
+          await updateBootstrapThreadState({ pendingLocalhostLaunch: false });
+        }
+        await launchLocalhostLauncher(launcherScript);
+        return;
+      }
+
+      if (!serverThread.pendingLocalhostLaunch) {
+        await updateBootstrapThreadState({ pendingLocalhostLaunch: true });
+      }
+
+      if (serverThread.bootstrapStatus === "running") {
+        return;
+      }
+
+      await runBootstrap({ queueLocalhost: true });
+    },
+    [
+      activeThread,
+      effectiveBootstrapConfig?.enabled,
+      effectiveBootstrapConfig?.installCommand,
+      effectiveLocalhostLauncherScript,
+      launchLocalhostLauncher,
+      runBootstrap,
+      serverThread,
+      updateBootstrapThreadState,
+    ],
+  );
+  const launchProjectScript = useCallback(
+    async (script: ProjectScript) => {
+      if (script.runAsLocalhostLauncher) {
+        await runLocalhostLauncher(script);
+        return;
+      }
+      await runProjectScript(script);
+    },
+    [runLocalhostLauncher, runProjectScript],
+  );
+  useEffect(() => {
+    if (!serverThread?.worktreePath) {
+      return;
+    }
+    if (!effectiveBootstrapConfig?.enabled || !effectiveBootstrapConfig.installCommand) {
+      return;
+    }
+    if (serverThread.bootstrapStatus !== "idle") {
+      return;
+    }
+    void runBootstrap();
+  }, [
+    effectiveBootstrapConfig?.enabled,
+    effectiveBootstrapConfig?.installCommand,
+    runBootstrap,
+    serverThread?.bootstrapStatus,
+    serverThread?.worktreePath,
+  ]);
+  useEffect(() => {
+    const api = readNativeApi();
+    if (!api || !serverThread) {
+      return;
+    }
+    return api.terminal.onEvent((event) => {
+      if (event.threadId !== serverThread.id || event.terminalId !== BOOTSTRAP_TERMINAL_ID) {
+        return;
+      }
+      if (event.type === "output") {
+        const nextOutput =
+          (bootstrapTerminalOutputBufferRef.current[serverThread.id] ?? "") + event.data;
+        bootstrapTerminalOutputBufferRef.current[serverThread.id] = nextOutput.slice(-8_192);
+        const match = bootstrapTerminalOutputBufferRef.current[serverThread.id]?.match(
+          /__T3_BOOTSTRAP_EXIT_CODE__:(\d+)/,
+        );
+        if (!match) {
+          return;
+        }
+        delete bootstrapTerminalOutputBufferRef.current[serverThread.id];
+        const exitCode = Number.parseInt(match[1] ?? "", 10);
+        if (exitCode === 0) {
+          void (async () => {
+            const shouldLaunchLocalhost =
+              useStore.getState().threads.find((thread) => thread.id === serverThread.id)
+                ?.pendingLocalhostLaunch ?? false;
+            await updateBootstrapThreadState({
+              bootstrapStatus: "ready",
+              bootstrapLastError: null,
+              pendingLocalhostLaunch: false,
+            });
+            if (shouldLaunchLocalhost) {
+              await launchLocalhostLauncher();
+            }
+          })().catch(() => undefined);
+          return;
+        }
+        void updateBootstrapThreadState({
+          bootstrapStatus: "failed",
+          bootstrapLastError: `Bootstrap exited with code ${exitCode}.`,
+          pendingLocalhostLaunch: false,
+        });
+        return;
+      }
+      if (event.type === "error") {
+        delete bootstrapTerminalOutputBufferRef.current[serverThread.id];
+        void updateBootstrapThreadState({
+          bootstrapStatus: "failed",
+          bootstrapLastError: event.message,
+          pendingLocalhostLaunch: false,
+        });
+        return;
+      }
+      if (event.type !== "exited") {
+        return;
+      }
+      if (event.exitCode === 0) {
+        void (async () => {
+          const shouldLaunchLocalhost =
+            useStore.getState().threads.find((thread) => thread.id === serverThread.id)
+              ?.pendingLocalhostLaunch ?? false;
+          await updateBootstrapThreadState({
+            bootstrapStatus: "ready",
+            bootstrapLastError: null,
+            pendingLocalhostLaunch: false,
+          });
+          if (shouldLaunchLocalhost) {
+            await launchLocalhostLauncher();
+          }
+        })().catch(() => undefined);
+        return;
+      }
+      const errorMessage =
+        event.exitCode !== null
+          ? `Bootstrap exited with code ${event.exitCode}.`
+          : "Bootstrap exited unsuccessfully.";
+      void updateBootstrapThreadState({
+        bootstrapStatus: "failed",
+        bootstrapLastError: errorMessage,
+        pendingLocalhostLaunch: false,
+      });
     });
-  }, [activeProject, runProjectScript, serverThread, threads]);
+  }, [launchLocalhostLauncher, serverThread, updateBootstrapThreadState]);
   const persistProjectScripts = useCallback(
     async (input: {
       projectId: ProjectId;
@@ -1535,6 +1864,27 @@ export default function ChatView({ threadId }: ChatViewProps) {
       }
     },
     [queryClient],
+  );
+  const saveProjectBootstrap = useCallback(
+    async (input: NewProjectBootstrapInput) => {
+      const api = readNativeApi();
+      if (!api || !activeProject) return;
+      await api.orchestration.dispatchCommand({
+        type: "project.meta.update",
+        commandId: newCommandId(),
+        projectId: activeProject.id,
+        bootstrap: {
+          enabled: input.enabled,
+          installCommand: input.installCommand,
+          devCommand: input.devCommand,
+          detectedPackageManager: input.detectedPackageManager,
+        },
+      });
+      await queryClient.invalidateQueries({
+        queryKey: projectQueryKeys.detectBootstrap(activeProject.cwd),
+      });
+    },
+    [activeProject, queryClient],
   );
   const saveProjectScript = useCallback(
     async (input: NewProjectScriptInput) => {
@@ -2309,7 +2659,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
       if (!script) return;
       event.preventDefault();
       event.stopPropagation();
-      void runProjectScript(script);
+      void launchProjectScript(script);
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
@@ -2321,7 +2671,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
     closeTerminal,
     createNewTerminal,
     setTerminalOpen,
-    runProjectScript,
+    launchProjectScript,
     splitTerminal,
     keybindings,
     onToggleDiff,
@@ -3615,14 +3965,16 @@ export default function ChatView({ threadId }: ChatViewProps) {
           activeProjectName={activeProject?.name}
           isGitRepo={isGitRepo}
           openInCwd={gitCwd}
+          activeProjectCwd={activeProject?.cwd ?? null}
           activeProjectScripts={activeProject?.scripts}
+          activeProjectBootstrap={activeProject?.bootstrap ?? null}
           preferredScriptId={
             activeProject ? (lastInvokedScriptByProjectId[activeProject.id] ?? null) : null
           }
           keybindings={keybindings}
           availableEditors={availableEditors}
           terminalAvailable={activeProject !== undefined}
-          localhostLauncherScript={localhostLauncherScript}
+          localhostLauncherScript={effectiveLocalhostLauncherScript}
           localhostLauncherDisabledReason={localhostLauncherDisabledReason}
           localhostLauncherLabel={localhostLauncherLabel}
           terminalOpen={terminalState.terminalOpen}
@@ -3631,13 +3983,19 @@ export default function ChatView({ threadId }: ChatViewProps) {
           gitCwd={gitCwd}
           diffOpen={diffOpen}
           onRunProjectScript={(script) => {
-            void runProjectScript(script);
+            void launchProjectScript(script);
           }}
           onAddProjectScript={saveProjectScript}
           onUpdateProjectScript={updateProjectScript}
           onDeleteProjectScript={deleteProjectScript}
+          onSaveProjectBootstrap={saveProjectBootstrap}
           onRunLocalhostLauncher={() => {
             void runLocalhostLauncher();
+          }}
+          bootstrapStatus={serverThread?.worktreePath ? serverThread.bootstrapStatus : null}
+          bootstrapError={serverThread?.bootstrapLastError ?? null}
+          onRetryBootstrap={() => {
+            void runBootstrap();
           }}
           onToggleTerminal={toggleTerminalVisibility}
           onToggleDiff={onToggleDiff}

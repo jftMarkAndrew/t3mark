@@ -151,6 +151,7 @@ function mapProjectsFromReadModel(
       createdAt: project.createdAt,
       updatedAt: project.updatedAt,
       scripts: project.scripts.map((script) => ({ ...script })),
+      bootstrap: project.bootstrap ? { ...project.bootstrap } : null,
     } satisfies Project;
   });
 
@@ -305,6 +306,10 @@ export function syncServerReadModel(state: AppState, readModel: OrchestrationRea
         branch: thread.branch,
         worktreePath: thread.worktreePath,
         devServerPort: thread.devServerPort ?? null,
+        bootstrapStatus: thread.bootstrapStatus ?? "idle",
+        bootstrapCommand: thread.bootstrapCommand ?? null,
+        bootstrapLastError: thread.bootstrapLastError ?? null,
+        pendingLocalhostLaunch: thread.pendingLocalhostLaunch ?? false,
         turnDiffSummaries: thread.checkpoints.map((checkpoint) => ({
           turnId: checkpoint.turnId,
           completedAt: checkpoint.completedAt,

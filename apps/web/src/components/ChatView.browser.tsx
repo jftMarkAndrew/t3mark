@@ -1311,6 +1311,98 @@ describe("ChatView timeline estimator parity (full app)", () => {
     }
   });
 
+  it("renders localhost commands with the assigned port when launched from the action menu", async () => {
+    const localhostSnapshot = createSnapshotForTargetUser({
+      targetMessageId: "msg-user-localhost-menu-target" as MessageId,
+      targetText: "localhost menu thread",
+    });
+    const localhostSourceThread = localhostSnapshot.threads[0];
+    if (!localhostSourceThread) {
+      throw new Error("Expected localhost test thread.");
+    }
+    const localhostThread = {
+      ...localhostSourceThread,
+      branch: "feature/web-menu",
+      worktreePath: "/repo/worktrees/feature-web-menu",
+      devServerPort: null,
+    };
+    const snapshot = withProjectScripts(
+      {
+        ...localhostSnapshot,
+        threads: [localhostThread],
+      },
+      [
+        {
+          id: "dev",
+          name: "Dev server",
+          command: "ng serve --port {{port}}",
+          icon: "play",
+          runOnWorktreeCreate: false,
+          runAsLocalhostLauncher: true,
+          localhostBasePort: 4200,
+        },
+      ],
+    );
+
+    const mounted = await mountChatView({
+      viewport: DEFAULT_VIEWPORT,
+      snapshot,
+    });
+
+    try {
+      const menuTrigger = await waitForElement(
+        () =>
+          document.querySelector('button[aria-label="Script actions"]') as HTMLButtonElement | null,
+        "Unable to find script actions trigger.",
+      );
+      menuTrigger.click();
+
+      const localhostMenuItem = await waitForElement(
+        () =>
+          Array.from(document.querySelectorAll("[role='menuitem']")).find((item) =>
+            item.textContent?.includes("Dev server (localhost)"),
+          ) as HTMLElement | null,
+        "Unable to find localhost action menu item.",
+      );
+      localhostMenuItem.click();
+
+      await vi.waitFor(
+        () => {
+          const commandRequest = wsRequests.find(
+            (request) =>
+              request._tag === ORCHESTRATION_WS_METHODS.dispatchCommand &&
+              (request.command as { type?: string } | undefined)?.type === "thread.meta.update",
+          );
+          expect(commandRequest).toMatchObject({
+            _tag: ORCHESTRATION_WS_METHODS.dispatchCommand,
+            command: {
+              type: "thread.meta.update",
+              threadId: THREAD_ID,
+              devServerPort: 4200,
+            },
+          });
+        },
+        { timeout: 8_000, interval: 16 },
+      );
+
+      await vi.waitFor(
+        () => {
+          const writeRequest = wsRequests.find(
+            (request) => request._tag === WS_METHODS.terminalWrite,
+          );
+          expect(writeRequest).toMatchObject({
+            _tag: WS_METHODS.terminalWrite,
+            threadId: THREAD_ID,
+            data: "ng serve --port 4200\r",
+          });
+        },
+        { timeout: 8_000, interval: 16 },
+      );
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
   it("toggles plan mode with Shift+Tab only while the composer is focused", async () => {
     const mounted = await mountChatView({
       viewport: DEFAULT_VIEWPORT,

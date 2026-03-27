@@ -156,6 +156,7 @@ export function createWsNativeApi(): NativeApi {
         transport.subscribe(WS_CHANNELS.terminalEvent, (message) => callback(message.data)),
     },
     projects: {
+      detectBootstrap: (input) => transport.request(WS_METHODS.projectsDetectBootstrap, input),
       searchEntries: (input) => transport.request(WS_METHODS.projectsSearchEntries, input),
       writeFile: (input) => transport.request(WS_METHODS.projectsWriteFile, input),
     },

@@ -415,6 +415,7 @@ function makeProject(overrides: Partial<Project> = {}): Project {
     createdAt: "2026-03-09T10:00:00.000Z",
     updatedAt: "2026-03-09T10:00:00.000Z",
     scripts: [],
+    bootstrap: null,
     ...rest,
   };
 }
@@ -442,6 +443,10 @@ function makeThread(overrides: Partial<Thread> = {}): Thread {
     branch: null,
     worktreePath: null,
     devServerPort: null,
+    bootstrapStatus: "idle",
+    bootstrapCommand: null,
+    bootstrapLastError: null,
+    pendingLocalhostLaunch: false,
     turnDiffSummaries: [],
     activities: [],
     ...overrides,

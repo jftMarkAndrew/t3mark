@@ -1,6 +1,6 @@
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 import * as SqlSchema from "effect/unstable/sql/SqlSchema";
-import { Effect, Layer, Schema, Struct } from "effect";
+import { Effect, Layer, Option, Schema, Struct } from "effect";
 
 import { toPersistenceSqlError } from "../Errors.ts";
 import {
@@ -16,6 +16,7 @@ import { ModelSelection } from "@t3tools/contracts";
 const ProjectionThreadDbRow = ProjectionThread.mapFields(
   Struct.assign({
     modelSelection: Schema.fromJsonString(ModelSelection),
+    pendingLocalhostLaunch: Schema.Number,
   }),
 );
 type ProjectionThreadDbRow = typeof ProjectionThreadDbRow.Type;
@@ -37,6 +38,10 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           branch,
           worktree_path,
           dev_server_port,
+          bootstrap_status,
+          bootstrap_command,
+          bootstrap_last_error,
+          pending_localhost_launch,
           latest_turn_id,
           created_at,
           updated_at,
@@ -52,6 +57,10 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           ${row.branch},
           ${row.worktreePath},
           ${row.devServerPort},
+          ${row.bootstrapStatus},
+          ${row.bootstrapCommand},
+          ${row.bootstrapLastError},
+          ${row.pendingLocalhostLaunch ? 1 : 0},
           ${row.latestTurnId},
           ${row.createdAt},
           ${row.updatedAt},
@@ -67,6 +76,10 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           branch = excluded.branch,
           worktree_path = excluded.worktree_path,
           dev_server_port = excluded.dev_server_port,
+          bootstrap_status = excluded.bootstrap_status,
+          bootstrap_command = excluded.bootstrap_command,
+          bootstrap_last_error = excluded.bootstrap_last_error,
+          pending_localhost_launch = excluded.pending_localhost_launch,
           latest_turn_id = excluded.latest_turn_id,
           created_at = excluded.created_at,
           updated_at = excluded.updated_at,
@@ -89,6 +102,10 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           branch,
           worktree_path AS "worktreePath",
           dev_server_port AS "devServerPort",
+          bootstrap_status AS "bootstrapStatus",
+          bootstrap_command AS "bootstrapCommand",
+          bootstrap_last_error AS "bootstrapLastError",
+          pending_localhost_launch AS "pendingLocalhostLaunch",
           latest_turn_id AS "latestTurnId",
           created_at AS "createdAt",
           updated_at AS "updatedAt",
@@ -113,6 +130,10 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           branch,
           worktree_path AS "worktreePath",
           dev_server_port AS "devServerPort",
+          bootstrap_status AS "bootstrapStatus",
+          bootstrap_command AS "bootstrapCommand",
+          bootstrap_last_error AS "bootstrapLastError",
+          pending_localhost_launch AS "pendingLocalhostLaunch",
           latest_turn_id AS "latestTurnId",
           created_at AS "createdAt",
           updated_at AS "updatedAt",
@@ -140,11 +161,23 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
   const getById: ProjectionThreadRepositoryShape["getById"] = (input) =>
     getProjectionThreadRow(input).pipe(
       Effect.mapError(toPersistenceSqlError("ProjectionThreadRepository.getById:query")),
+      Effect.map((rowOption) =>
+        Option.map(rowOption, (row) => ({
+          ...row,
+          pendingLocalhostLaunch: row.pendingLocalhostLaunch !== 0,
+        })),
+      ),
     );
 
   const listByProjectId: ProjectionThreadRepositoryShape["listByProjectId"] = (input) =>
     listProjectionThreadRows(input).pipe(
       Effect.mapError(toPersistenceSqlError("ProjectionThreadRepository.listByProjectId:query")),
+      Effect.map((rows) =>
+        rows.map((row) => ({
+          ...row,
+          pendingLocalhostLaunch: row.pendingLocalhostLaunch !== 0,
+        })),
+      ),
     );
 
   const deleteById: ProjectionThreadRepositoryShape["deleteById"] = (input) =>

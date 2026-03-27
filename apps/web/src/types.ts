@@ -1,4 +1,6 @@
 import type {
+  BootstrapPackageManager,
+  ProjectBootstrapConfig,
   ModelSelection,
   OrchestrationLatestTurn,
   OrchestrationProposedPlanId,
@@ -86,7 +88,11 @@ export interface Project {
   createdAt?: string | undefined;
   updatedAt?: string | undefined;
   scripts: ProjectScript[];
+  bootstrap: ProjectBootstrapConfig | null;
 }
+
+export type ThreadBootstrapStatus = "idle" | "running" | "ready" | "failed";
+export type ThreadBootstrapPackageManager = BootstrapPackageManager | null;
 
 export interface Thread {
   id: ThreadId;
@@ -107,6 +113,10 @@ export interface Thread {
   branch: string | null;
   worktreePath: string | null;
   devServerPort: number | null;
+  bootstrapStatus: ThreadBootstrapStatus;
+  bootstrapCommand: string | null;
+  bootstrapLastError: string | null;
+  pendingLocalhostLaunch: boolean;
   turnDiffSummaries: TurnDiffSummary[];
   activities: OrchestrationThreadActivity[];
 }

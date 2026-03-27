@@ -268,6 +268,42 @@ describe("TerminalManager", () => {
     manager.dispose();
   });
 
+  it("preserves a live terminal process when reopen requests use a different cwd or env", async () => {
+    const { manager, ptyAdapter } = makeManager();
+    const baseDir = fs.mkdtempSync(path.join(os.tmpdir(), "t3code-terminal-cwd-"));
+    tempDirs.push(baseDir);
+    const initialCwd = path.join(baseDir, "first");
+    const nextCwd = path.join(baseDir, "second");
+    fs.mkdirSync(initialCwd, { recursive: true });
+    fs.mkdirSync(nextCwd, { recursive: true });
+    await manager.open(
+      openInput({
+        cwd: initialCwd,
+        env: {
+          T3CODE_LOCALHOST_PORT: "4200",
+        },
+      }),
+    );
+    const ptyProcess = ptyAdapter.processes[0];
+    expect(ptyProcess).toBeDefined();
+    if (!ptyProcess) return;
+
+    const snapshot = await manager.open(
+      openInput({
+        cwd: nextCwd,
+        env: {
+          T3CODE_LOCALHOST_PORT: "4201",
+        },
+      }),
+    );
+
+    expect(ptyAdapter.spawnInputs).toHaveLength(1);
+    expect(ptyProcess.killed).toBe(false);
+    expect(snapshot.cwd).toBe(initialCwd);
+
+    manager.dispose();
+  });
+
   it("preserves existing terminal size on open when size is omitted", async () => {
     const { manager, ptyAdapter } = makeManager();
     await manager.open(openInput({ cols: 100, rows: 24 }));

@@ -1,5 +1,6 @@
 import type {
   OrchestrationCommand,
+  ProjectBootstrapConfig,
   OrchestrationProject,
   OrchestrationReadModel,
   OrchestrationThread,
@@ -154,5 +155,31 @@ export function requireValidProjectScripts(input: {
     }
   }
 
+  return Effect.void;
+}
+
+export function requireValidProjectBootstrap(input: {
+  readonly commandType: OrchestrationCommand["type"];
+  readonly bootstrap: ProjectBootstrapConfig | null;
+}): Effect.Effect<void, OrchestrationCommandInvariantError> {
+  if (input.bootstrap === null) {
+    return Effect.void;
+  }
+  if (!input.bootstrap.enabled) {
+    return Effect.void;
+  }
+  if (!input.bootstrap.installCommand) {
+    return Effect.fail(
+      invariantError(input.commandType, "Bootstrap requires an install command when enabled."),
+    );
+  }
+  if (input.bootstrap.devCommand && !input.bootstrap.devCommand.includes("{{port}}")) {
+    return Effect.fail(
+      invariantError(
+        input.commandType,
+        "Bootstrap localhost command must include '{{port}}' when configured.",
+      ),
+    );
+  }
   return Effect.void;
 }
