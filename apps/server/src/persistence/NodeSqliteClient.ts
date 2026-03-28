@@ -20,7 +20,7 @@ import * as Stream from "effect/Stream";
 import * as Reactivity from "effect/unstable/reactivity/Reactivity";
 import * as Client from "effect/unstable/sql/SqlClient";
 import type { Connection } from "effect/unstable/sql/SqlConnection";
-import { SqlError, classifySqliteError } from "effect/unstable/sql/SqlError";
+import { SqlError } from "effect/unstable/sql/SqlError";
 import * as Statement from "effect/unstable/sql/Statement";
 
 const ATTR_DB_SYSTEM_NAME = "db.system.name";
@@ -28,9 +28,6 @@ const ATTR_DB_SYSTEM_NAME = "db.system.name";
 export const TypeId: TypeId = "~local/sqlite-node/SqliteClient";
 
 export type TypeId = "~local/sqlite-node/SqliteClient";
-
-const classifyError = (cause: unknown, message: string, operation: string) =>
-  classifySqliteError(cause, { message, operation });
 
 /**
  * SqliteClient - Effect service tag for the sqlite SQL client.
@@ -53,26 +50,27 @@ export interface SqliteMemoryClientConfig extends Omit<
   "filename" | "readonly"
 > {}
 
-/**
- * Verify that the current Node.js version includes the `node:sqlite` APIs
- * used by `NodeSqliteClient` — specifically `StatementSync.columns()` (added
- * in Node 22.16.0 / 23.11.0).
- *
- * @see https://github.com/nodejs/node/pull/57490
- */
-const checkNodeSqliteCompat = () => {
-  const parts = process.versions.node.split(".").map(Number);
-  const major = parts[0] ?? 0;
-  const minor = parts[1] ?? 0;
-  const supported = (major === 22 && minor >= 16) || (major === 23 && minor >= 11) || major >= 24;
+const statementKeyword = (sql: string): string => {
+  const match = sql.trimStart().match(/^([A-Za-z]+)/);
+  return match?.[1]?.toUpperCase() ?? "";
+};
 
-  if (!supported) {
-    return Effect.die(
-      `Node.js ${process.versions.node} is missing required node:sqlite APIs ` +
-        `(StatementSync.columns). Upgrade to Node.js >=22.16, >=23.11, or >=24.`,
-    );
+const inferStatementHasRows = (sql: string): boolean => {
+  const keyword = statementKeyword(sql);
+  switch (keyword) {
+    case "SELECT":
+    case "PRAGMA":
+    case "EXPLAIN":
+    case "WITH":
+    case "VALUES":
+      return true;
+    case "INSERT":
+    case "UPDATE":
+    case "DELETE":
+      return /\bRETURNING\b/i.test(sql);
+    default:
+      return false;
   }
-  return Effect.void;
 };
 
 const makeWithDatabase = (
@@ -80,8 +78,6 @@ const makeWithDatabase = (
   openDatabase: () => DatabaseSync,
 ): Effect.Effect<Client.SqlClient, never, Scope.Scope | Reactivity.Reactivity> =>
   Effect.gen(function* () {
-    yield* checkNodeSqliteCompat();
-
     const compiler = Statement.makeCompilerSqlite(options.transformQueryNames);
     const transformRows = options.transformResultNames
       ? Statement.defaultTransforms(options.transformResultNames).array
@@ -96,12 +92,13 @@ const makeWithDatabase = (
       );
 
       const statementReaderCache = new WeakMap<StatementSync, boolean>();
-      const hasRows = (statement: StatementSync): boolean => {
+      const hasRows = (statement: StatementSync, fallback: boolean): boolean => {
         const cached = statementReaderCache.get(statement);
         if (cached !== undefined) {
           return cached;
         }
-        const value = statement.columns().length > 0;
+        const value =
+          typeof statement.columns === "function" ? statement.columns().length > 0 : fallback;
         statementReaderCache.set(statement, value);
         return value;
       };
@@ -111,23 +108,31 @@ const makeWithDatabase = (
         timeToLive: options.prepareCacheTTL ?? Duration.minutes(10),
         lookup: (sql: string) =>
           Effect.try({
-            try: () => db.prepare(sql),
+            try: () => ({
+              statement: db.prepare(sql),
+              hasRows: inferStatementHasRows(sql),
+            }),
             catch: (cause) =>
               new SqlError({
-                reason: classifyError(cause, "Failed to prepare statement", "prepare"),
+                cause,
+                message: "Failed to prepare statement",
               }),
           }),
       });
 
       const runStatement = (
-        statement: StatementSync,
+        prepared: {
+          readonly statement: StatementSync;
+          readonly hasRows: boolean;
+        },
         params: ReadonlyArray<unknown>,
         raw: boolean,
       ) =>
         Effect.withFiber<ReadonlyArray<any>, SqlError>((fiber) => {
+          const statement = prepared.statement;
           statement.setReadBigInts(Boolean(ServiceMap.get(fiber.services, Client.SafeIntegers)));
           try {
-            if (hasRows(statement)) {
+            if (hasRows(statement, prepared.hasRows)) {
               return Effect.succeed(statement.all(...(params as any)));
             }
             const result = statement.run(...(params as any));
@@ -135,22 +140,26 @@ const makeWithDatabase = (
           } catch (cause) {
             return Effect.fail(
               new SqlError({
-                reason: classifyError(cause, "Failed to execute statement", "execute"),
+                cause,
+                message: "Failed to execute statement",
               }),
             );
           }
         });
 
       const run = (sql: string, params: ReadonlyArray<unknown>, raw = false) =>
-        Effect.flatMap(Cache.get(prepareCache, sql), (s) => runStatement(s, params, raw));
+        Effect.flatMap(Cache.get(prepareCache, sql), (prepared) =>
+          runStatement(prepared, params, raw),
+        );
 
       const runValues = (sql: string, params: ReadonlyArray<unknown>) =>
         Effect.acquireUseRelease(
           Cache.get(prepareCache, sql),
-          (statement) =>
+          (prepared) =>
             Effect.try({
               try: () => {
-                if (hasRows(statement)) {
+                const statement = prepared.statement;
+                if (hasRows(statement, prepared.hasRows)) {
                   statement.setReturnArrays(true);
                   // Safe to cast to array after we've setReturnArrays(true)
                   return statement.all(...(params as any)) as unknown as ReadonlyArray<
@@ -162,12 +171,14 @@ const makeWithDatabase = (
               },
               catch: (cause) =>
                 new SqlError({
-                  reason: classifyError(cause, "Failed to execute statement", "execute"),
+                  cause,
+                  message: "Failed to execute statement",
                 }),
             }),
-          (statement) =>
+          (prepared) =>
             Effect.sync(() => {
-              if (hasRows(statement)) {
+              const statement = prepared.statement;
+              if (hasRows(statement, prepared.hasRows)) {
                 statement.setReturnArrays(false);
               }
             }),
@@ -184,7 +195,14 @@ const makeWithDatabase = (
           return runValues(sql, params);
         },
         executeUnprepared(sql, params, rowTransform) {
-          const effect = runStatement(db.prepare(sql), params ?? [], false);
+          const effect = runStatement(
+            {
+              statement: db.prepare(sql),
+              hasRows: inferStatementHasRows(sql),
+            },
+            params ?? [],
+            false,
+          );
           return rowTransform ? Effect.map(effect, rowTransform) : effect;
         },
         executeStream(_sql, _params) {

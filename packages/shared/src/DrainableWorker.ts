@@ -1,12 +1,13 @@
 /**
- * DrainableWorker - A queue-based worker with deterministic `drain()`.
+ * DrainableWorker - A queue-based worker that exposes a `drain()` effect.
  *
- * Tracks outstanding work in STM so `drain()` resolves only when no items
- * are queued or in flight. Useful in tests instead of timing-based waits.
+ * Wraps the common `Queue.unbounded` + `Effect.forever` pattern and tracks
+ * outstanding work explicitly so tests can wait deterministically for the
+ * worker to become idle.
  *
  * @module DrainableWorker
  */
-import { Effect, TxQueue, TxRef } from "effect";
+import { Deferred, Effect, Queue, Ref } from "effect";
 import type { Scope } from "effect";
 
 export interface DrainableWorker<A> {
@@ -37,40 +38,66 @@ export const makeDrainableWorker = <A, E, R>(
   process: (item: A) => Effect.Effect<void, E, R>,
 ): Effect.Effect<DrainableWorker<A>, never, Scope.Scope | R> =>
   Effect.gen(function* () {
-    const ref = yield* TxRef.make(0);
+    const queue = yield* Queue.unbounded<A>();
+    const initialIdle = yield* Deferred.make<void>();
+    yield* Deferred.succeed(initialIdle, undefined).pipe(Effect.orDie);
+    const state = yield* Ref.make({
+      outstanding: 0,
+      idle: initialIdle,
+    });
 
-    const queue = yield* Effect.acquireRelease(TxQueue.unbounded<A>(), (queue) =>
-      TxQueue.shutdown(queue),
-    );
+    yield* Effect.addFinalizer(() => Queue.shutdown(queue).pipe(Effect.asVoid));
 
-    const takeItem = Effect.tx(
-      Effect.gen(function* () {
-        const item = yield* TxQueue.take(queue);
-        yield* TxRef.update(ref, (n) => n + 1);
-        return item;
-      }),
-    );
-
-    yield* takeItem.pipe(
-      Effect.flatMap((item) =>
-        process(item).pipe(Effect.ensuring(TxRef.update(ref, (n) => n - 1))),
+    const finishOne = Ref.modify(state, (current) => {
+      const remaining = Math.max(0, current.outstanding - 1);
+      return [
+        remaining === 0 ? current.idle : null,
+        {
+          outstanding: remaining,
+          idle: current.idle,
+        },
+      ] as const;
+    }).pipe(
+      Effect.flatMap((idle) =>
+        idle === null ? Effect.void : Deferred.succeed(idle, undefined).pipe(Effect.orDie),
       ),
-      Effect.forever,
-      Effect.forkScoped,
     );
 
-    const drain: DrainableWorker<A>["drain"] = Effect.tx(
+    yield* Effect.forkScoped(
+      Effect.forever(
+        Queue.take(queue).pipe(
+          Effect.flatMap((item) => process(item).pipe(Effect.ensuring(finishOne))),
+        ),
+      ),
+    );
+
+    const enqueue: DrainableWorker<A>["enqueue"] = (item) =>
       Effect.gen(function* () {
-        const inFlight = yield* TxRef.get(ref);
-        const isEmpty = yield* TxQueue.isEmpty(queue);
-        if (inFlight > 0 || !isEmpty) {
-          return yield* Effect.txRetry;
+        const nextIdle = yield* Deferred.make<void>();
+        yield* Ref.update(state, (current) =>
+          current.outstanding === 0
+            ? {
+                outstanding: 1,
+                idle: nextIdle,
+              }
+            : {
+                outstanding: current.outstanding + 1,
+                idle: current.idle,
+              },
+        );
+
+        const accepted = yield* Queue.offer(queue, item);
+        if (!accepted) {
+          yield* finishOne;
         }
-      }),
+      });
+
+    const drain: DrainableWorker<A>["drain"] = Ref.get(state).pipe(
+      Effect.flatMap(({ idle }) => Deferred.await(idle)),
     );
 
     return {
-      enqueue: (item) => TxQueue.offer(queue, item),
+      enqueue,
       drain,
     } satisfies DrainableWorker<A>;
   });

@@ -1100,7 +1100,7 @@ describe("ClaudeAdapterLive", () => {
   it.effect("closes the session when the Claude stream aborts after a turn starts", () => {
     const harness = makeHarness();
     return Effect.gen(function* () {
-      const services = yield* Effect.services();
+      const services = yield* Effect.services<never>();
       const runFork = Effect.runForkWith(services);
 
       const adapter = yield* ClaudeAdapter;
@@ -1200,7 +1200,7 @@ describe("ClaudeAdapterLive", () => {
     );
 
     return Effect.gen(function* () {
-      const services = yield* Effect.services();
+      const services = yield* Effect.services<never>();
       const runFork = Effect.runForkWith(services);
 
       const adapter = yield* ClaudeAdapter;
