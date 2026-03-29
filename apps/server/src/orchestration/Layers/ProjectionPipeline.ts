@@ -365,6 +365,7 @@ const makeOrchestrationProjectionPipeline = Effect.gen(function* () {
             defaultModelSelection: event.payload.defaultModelSelection,
             scripts: event.payload.scripts,
             bootstrap: event.payload.bootstrap ?? null,
+            daytona: event.payload.daytona ?? null,
             createdAt: event.payload.createdAt,
             updatedAt: event.payload.updatedAt,
             deletedAt: null,
@@ -391,6 +392,7 @@ const makeOrchestrationProjectionPipeline = Effect.gen(function* () {
             ...(event.payload.bootstrap !== undefined
               ? { bootstrap: event.payload.bootstrap }
               : {}),
+            ...(event.payload.daytona !== undefined ? { daytona: event.payload.daytona } : {}),
             updatedAt: event.payload.updatedAt,
           });
           return;

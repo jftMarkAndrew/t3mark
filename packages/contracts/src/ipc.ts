@@ -23,7 +23,14 @@ import type {
   GitStatusInput,
   GitStatusResult,
 } from "./git";
-import type { DevHostListResult, DevHostRegisterInput, DevHostStopInput } from "./devHost";
+import type {
+  DaytonaLaunchInput,
+  DaytonaStopInput,
+  DevHostListResult,
+  DevHostRegisterInput,
+  DevHostStopInput,
+  ActiveDevHost,
+} from "./devHost";
 import type { JiraIssueLookupInput, JiraIssueLookupResult } from "./jira";
 import type {
   ProjectDetectBootstrapInput,
@@ -143,6 +150,10 @@ export interface NativeApi {
     register: (input: DevHostRegisterInput) => Promise<void>;
     list: () => Promise<DevHostListResult>;
     stop: (input: DevHostStopInput) => Promise<void>;
+  };
+  daytona: {
+    launch: (input: DaytonaLaunchInput) => Promise<ActiveDevHost>;
+    stop: (input: DaytonaStopInput) => Promise<void>;
   };
   projects: {
     detectBootstrap: (input: ProjectDetectBootstrapInput) => Promise<ProjectDetectBootstrapResult>;

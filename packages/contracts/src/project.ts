@@ -49,5 +49,10 @@ export const ProjectDetectBootstrapResult = Schema.Struct({
   installCommand: Schema.NullOr(TrimmedNonEmptyString),
   devCommand: Schema.NullOr(TrimmedNonEmptyString),
   detectedPackageManager: Schema.NullOr(BootstrapPackageManager),
+  detectedRepoUrl: Schema.NullOr(TrimmedNonEmptyString),
+  detectedDefaultBranch: Schema.NullOr(TrimmedNonEmptyString),
+  detectedDaytonaInstallCommand: Schema.NullOr(TrimmedNonEmptyString),
+  detectedDaytonaDevCommand: Schema.NullOr(TrimmedNonEmptyString),
+  detectedAppPort: Schema.NullOr(PositiveInt),
 });
 export type ProjectDetectBootstrapResult = typeof ProjectDetectBootstrapResult.Type;

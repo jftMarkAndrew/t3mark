@@ -184,6 +184,7 @@ export function projectEvent(
             defaultModelSelection: payload.defaultModelSelection,
             scripts: payload.scripts,
             bootstrap: payload.bootstrap ?? null,
+            daytona: payload.daytona ?? null,
             createdAt: payload.createdAt,
             updatedAt: payload.updatedAt,
             deletedAt: null,
@@ -217,6 +218,7 @@ export function projectEvent(
                     : {}),
                   ...(payload.scripts !== undefined ? { scripts: payload.scripts } : {}),
                   ...(payload.bootstrap !== undefined ? { bootstrap: payload.bootstrap } : {}),
+                  ...(payload.daytona !== undefined ? { daytona: payload.daytona } : {}),
                   updatedAt: payload.updatedAt,
                 }
               : project,

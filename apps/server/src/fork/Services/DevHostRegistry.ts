@@ -1,4 +1,5 @@
 import {
+  type ActiveDevHost,
   DevHostListResult,
   DevHostRegisterInput,
   DevHostStopInput,
@@ -16,6 +17,8 @@ export class DevHostRegistryError extends Schema.TaggedErrorClass<DevHostRegistr
 
 export interface DevHostRegistryShape {
   readonly registerHost: (input: DevHostRegisterInput) => Effect.Effect<void, DevHostRegistryError>;
+  readonly unregisterHost: (hostId: string) => Effect.Effect<void, never>;
+  readonly getHost: (hostId: string) => Effect.Effect<ActiveDevHost | null, never>;
   readonly listHosts: Effect.Effect<DevHostListResult, never>;
   readonly stopHost: (input: DevHostStopInput) => Effect.Effect<void, DevHostRegistryError>;
   readonly reconcileTerminalEvent: (event: TerminalEvent) => Effect.Effect<void, never>;

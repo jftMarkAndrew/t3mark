@@ -23,15 +23,32 @@ export const DevHostRegistryLive = Layer.effect(
         Ref.update(hostsRef, (current) => {
           const next = new Map(current);
           const registeredAt = new Date().toISOString();
-          next.set(hostKey(input.threadId, input.terminalId), {
-            id: hostKey(input.threadId, input.terminalId),
+          if (input.launchKind === "daytona_preview") {
+            for (const [key, host] of next.entries()) {
+              if (host.launchKind === "daytona_preview" && host.threadId === input.threadId) {
+                next.delete(key);
+              }
+            }
+          }
+          const id =
+            input.launchKind === "localhost_launcher"
+              ? hostKey(input.threadId, input.terminalId ?? "default")
+              : hostKey(input.threadId, input.workspaceId ?? `daytona-${registeredAt}`);
+          next.set(id, {
+            id,
             threadId: input.threadId,
             projectId: input.projectId,
             projectCwd: input.projectCwd,
-            terminalId: input.terminalId,
-            port: input.port,
+            terminalId: input.terminalId ?? null,
+            port: input.port ?? null,
             launchKind: input.launchKind,
-            status: "running",
+            status: input.status ?? "running",
+            url: input.url ?? null,
+            workspaceId: input.workspaceId ?? null,
+            branch: input.branch ?? null,
+            repoUrl: input.repoUrl ?? null,
+            statusDetail: input.statusDetail ?? null,
+            lastError: input.lastError ?? null,
             registeredAt,
           });
           return next;
@@ -44,9 +61,22 @@ export const DevHostRegistryLive = Layer.effect(
               }),
           ),
         ),
+      unregisterHost: (hostId) =>
+        Ref.update(hostsRef, (current) => {
+          if (!current.has(hostId)) {
+            return current;
+          }
+          const next = new Map(current);
+          next.delete(hostId);
+          return next;
+        }).pipe(Effect.orDie),
+      getHost: (hostId) => Ref.get(hostsRef).pipe(Effect.map((hosts) => hosts.get(hostId) ?? null)),
       listHosts: Ref.get(hostsRef).pipe(
         Effect.map((hosts) => ({
-          hosts: [...hosts.values()].toSorted((left, right) => left.port - right.port),
+          hosts: [...hosts.values()].toSorted(
+            (left, right) =>
+              (left.port ?? Number.MAX_SAFE_INTEGER) - (right.port ?? Number.MAX_SAFE_INTEGER),
+          ),
         })),
       ),
       stopHost: (input) =>
@@ -55,6 +85,9 @@ export const DevHostRegistryLive = Layer.effect(
           const host =
             [...hosts.values()].find((candidate) => candidate.id === input.hostId) ?? null;
           if (!host) {
+            return;
+          }
+          if (host.launchKind !== "localhost_launcher" || !host.terminalId) {
             return;
           }
           yield* terminalManager

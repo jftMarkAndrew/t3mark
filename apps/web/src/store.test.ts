@@ -55,6 +55,7 @@ function makeState(thread: Thread): AppState {
         expanded: true,
         scripts: [],
         bootstrap: null,
+        daytona: null,
       },
     ],
     threads: [thread],
@@ -111,6 +112,7 @@ function makeReadModel(thread: OrchestrationReadModel["threads"][number]): Orche
         deletedAt: null,
         scripts: [],
         bootstrap: null,
+        daytona: null,
       },
     ],
     threads: [thread],
@@ -133,6 +135,7 @@ function makeReadModelProject(
     deletedAt: null,
     scripts: [],
     bootstrap: null,
+    daytona: null,
     ...overrides,
   };
 }
@@ -194,6 +197,7 @@ describe("store pure functions", () => {
           expanded: true,
           scripts: [],
           bootstrap: null,
+          daytona: null,
         },
         {
           id: project2,
@@ -206,6 +210,7 @@ describe("store pure functions", () => {
           expanded: true,
           scripts: [],
           bootstrap: null,
+          daytona: null,
         },
         {
           id: project3,
@@ -218,6 +223,7 @@ describe("store pure functions", () => {
           expanded: true,
           scripts: [],
           bootstrap: null,
+          daytona: null,
         },
       ],
       threads: [],
@@ -303,6 +309,7 @@ describe("store read model sync", () => {
           expanded: true,
           scripts: [],
           bootstrap: null,
+          daytona: null,
         },
         {
           id: project1,
@@ -315,6 +322,7 @@ describe("store read model sync", () => {
           expanded: true,
           scripts: [],
           bootstrap: null,
+          daytona: null,
         },
       ],
       threads: [],

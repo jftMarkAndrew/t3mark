@@ -1,6 +1,7 @@
 import type {
   BootstrapPackageManager,
   ProjectBootstrapConfig,
+  ProjectDaytonaConfig,
   ModelSelection,
   OrchestrationLatestTurn,
   OrchestrationProposedPlanId,
@@ -89,6 +90,7 @@ export interface Project {
   updatedAt?: string | undefined;
   scripts: ProjectScript[];
   bootstrap: ProjectBootstrapConfig | null;
+  daytona: ProjectDaytonaConfig | null;
 }
 
 export type ThreadBootstrapStatus = "idle" | "running" | "ready" | "failed";

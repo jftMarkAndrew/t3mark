@@ -160,6 +160,10 @@ export function createWsNativeApi(): NativeApi {
       list: () => transport.request(WS_METHODS.devHostsList),
       stop: (input) => transport.request(WS_METHODS.devHostsStop, input),
     },
+    daytona: {
+      launch: (input) => transport.request(WS_METHODS.daytonaLaunch, input, { timeoutMs: null }),
+      stop: (input) => transport.request(WS_METHODS.daytonaStop, input, { timeoutMs: null }),
+    },
     projects: {
       detectBootstrap: (input) => transport.request(WS_METHODS.projectsDetectBootstrap, input),
       searchEntries: (input) => transport.request(WS_METHODS.projectsSearchEntries, input),

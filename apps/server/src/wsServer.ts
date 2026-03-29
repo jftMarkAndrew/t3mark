@@ -49,6 +49,7 @@ import { createLogger } from "./logger";
 import { GitManager } from "./git/Services/GitManager.ts";
 import { TerminalManager } from "./terminal/Services/Manager.ts";
 import { DevHostRegistry } from "./fork/Services/DevHostRegistry.ts";
+import { DaytonaService, resolveDaytonaServerStatus } from "./fork/Services/Daytona.ts";
 import { Jira } from "./fork/Services/Jira.ts";
 import { Keybindings } from "./keybindings";
 import { ServerSettingsService } from "./serverSettings";
@@ -205,11 +206,24 @@ function stripRequestTag<T extends { _tag: string }>(body: T) {
 
 function formatWsErrorMessage(cause: Cause.Cause<unknown>): string {
   const pretty = Cause.pretty(cause);
-  const firstLine = pretty
+  const lines = pretty
     .split("\n")
     .map((line) => line.trim())
     .find((line) => line.length > 0);
-  return firstLine ?? "Request failed";
+  if (typeof lines === "string" && lines.length > 0) {
+    return lines;
+  }
+
+  const messageLines = pretty
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .filter((line) => !line.startsWith("Error:") || line.length > "Error:".length)
+    .slice(0, 4);
+  if (messageLines.length > 0) {
+    return messageLines.join(" | ");
+  }
+  return "Request failed";
 }
 
 const encodeWsResponse = Schema.encodeEffect(Schema.fromJsonString(WsResponse));
@@ -229,6 +243,7 @@ export type ServerRuntimeServices =
   | GitCore
   | TerminalManager
   | DevHostRegistry
+  | DaytonaService
   | Jira
   | Keybindings
   | ServerSettingsService
@@ -274,6 +289,7 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
   const gitManager = yield* GitManager;
   const terminalManager = yield* TerminalManager;
   const devHostRegistry = yield* DevHostRegistry;
+  const daytonaService = yield* DaytonaService;
   const jira = yield* Jira;
   const keybindingsManager = yield* Keybindings;
   const serverSettingsManager = yield* ServerSettingsService;
@@ -736,7 +752,7 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
 
   const unsubscribeTerminalEvents = yield* terminalManager.subscribe(
     (event) =>
-      void Effect.runPromise(
+      void runPromise(
         devHostRegistry
           .reconcileTerminalEvent(event)
           .pipe(Effect.andThen(pushBus.publishAll(WS_CHANNELS.terminalEvent, event))),
@@ -957,6 +973,16 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
         return yield* devHostRegistry.stopHost(body);
       }
 
+      case WS_METHODS.daytonaLaunch: {
+        const body = stripRequestTag(request.body);
+        return yield* daytonaService.launchPreview(body);
+      }
+
+      case WS_METHODS.daytonaStop: {
+        const body = stripRequestTag(request.body);
+        return yield* daytonaService.stopPreview(body);
+      }
+
       case WS_METHODS.serverGetConfig: {
         const keybindingsConfig = yield* keybindingsManager.loadConfigState;
         const settings = yield* serverSettingsManager.getSettings;
@@ -969,6 +995,7 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
           providers,
           availableEditors,
           settings,
+          daytona: resolveDaytonaServerStatus(),
         };
       }
 

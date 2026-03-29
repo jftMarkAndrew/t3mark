@@ -1,9 +1,11 @@
 import type {
   BootstrapPackageManager,
   ProjectBootstrapConfig,
+  ProjectDaytonaConfig,
   ProjectScript,
   ProjectScriptIcon,
   ResolvedKeybindingsConfig,
+  DaytonaServerStatus,
 } from "@t3tools/contracts";
 import {
   BugIcon,
@@ -102,9 +104,20 @@ export interface NewProjectBootstrapInput {
   detectedPackageManager: BootstrapPackageManager | null;
 }
 
+export interface NewProjectDaytonaInput {
+  enabled: boolean;
+  repoUrl: string | null;
+  defaultBranch: string | null;
+  installCommand: string | null;
+  devCommand: string | null;
+  previewPort: number | null;
+}
+
 interface ProjectScriptsControlProps {
   projectCwd: string;
   bootstrap: ProjectBootstrapConfig | null;
+  daytona: ProjectDaytonaConfig | null;
+  daytonaServerStatus?: DaytonaServerStatus | null;
   scripts: ProjectScript[];
   keybindings: ResolvedKeybindingsConfig;
   preferredScriptId?: string | null;
@@ -113,6 +126,7 @@ interface ProjectScriptsControlProps {
   onUpdateScript: (scriptId: string, input: NewProjectScriptInput) => Promise<void> | void;
   onDeleteScript: (scriptId: string) => Promise<void> | void;
   onSaveBootstrap: (input: NewProjectBootstrapInput) => Promise<void> | void;
+  onSaveDaytona: (input: NewProjectDaytonaInput) => Promise<void> | void;
 }
 
 function normalizeShortcutKeyToken(key: string): string | null {
@@ -169,6 +183,8 @@ function keybindingFromEvent(event: KeyboardEvent<HTMLInputElement>): string | n
 export default function ProjectScriptsControl({
   projectCwd,
   bootstrap,
+  daytona,
+  daytonaServerStatus = null,
   scripts,
   keybindings,
   preferredScriptId = null,
@@ -177,12 +193,15 @@ export default function ProjectScriptsControl({
   onUpdateScript,
   onDeleteScript,
   onSaveBootstrap,
+  onSaveDaytona,
 }: ProjectScriptsControlProps) {
   const addScriptFormId = React.useId();
   const bootstrapFormId = React.useId();
+  const daytonaFormId = React.useId();
   const [editingScriptId, setEditingScriptId] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [bootstrapDialogOpen, setBootstrapDialogOpen] = useState(false);
+  const [daytonaDialogOpen, setDaytonaDialogOpen] = useState(false);
   const [name, setName] = useState("");
   const [command, setCommand] = useState("");
   const [icon, setIcon] = useState<ProjectScriptIcon>("play");
@@ -198,13 +217,52 @@ export default function ProjectScriptsControl({
   const [bootstrapPackageManager, setBootstrapPackageManager] =
     useState<BootstrapPackageManager | null>(null);
   const [bootstrapValidationError, setBootstrapValidationError] = useState<string | null>(null);
+  const [daytonaEnabled, setDaytonaEnabled] = useState(false);
+  const [daytonaRepoUrl, setDaytonaRepoUrl] = useState("");
+  const [daytonaDefaultBranch, setDaytonaDefaultBranch] = useState("");
+  const [daytonaInstallCommand, setDaytonaInstallCommand] = useState("");
+  const [daytonaDevCommand, setDaytonaDevCommand] = useState("");
+  const [daytonaPreviewPort, setDaytonaPreviewPort] = useState(String(DEFAULT_LOCALHOST_BASE_PORT));
+  const [daytonaValidationError, setDaytonaValidationError] = useState<string | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const bootstrapDetectionQuery = useQuery(
     projectDetectBootstrapQueryOptions({
       cwd: projectCwd,
-      enabled: bootstrapDialogOpen || bootstrap === null,
+      enabled: bootstrapDialogOpen || daytonaDialogOpen || bootstrap === null,
     }),
   );
+
+  React.useEffect(() => {
+    if (!daytonaDialogOpen) {
+      return;
+    }
+    const detected = bootstrapDetectionQuery.data;
+    if (!detected) {
+      return;
+    }
+
+    if (daytona?.repoUrl == null || daytona.repoUrl.trim().length === 0) {
+      setDaytonaRepoUrl((current) => current || detected.detectedRepoUrl || "");
+    }
+    if (daytona?.defaultBranch == null || daytona.defaultBranch.trim().length === 0) {
+      setDaytonaDefaultBranch((current) => current || detected.detectedDefaultBranch || "");
+    }
+    if (daytona?.installCommand == null || daytona.installCommand.trim().length === 0) {
+      setDaytonaInstallCommand(
+        (current) => current || detected.detectedDaytonaInstallCommand || "",
+      );
+    }
+    if (daytona?.devCommand == null || daytona.devCommand.trim().length === 0) {
+      setDaytonaDevCommand((current) => current || detected.detectedDaytonaDevCommand || "");
+    }
+    if (daytona?.previewPort == null) {
+      setDaytonaPreviewPort((current) =>
+        current === String(DEFAULT_LOCALHOST_BASE_PORT) && detected.detectedAppPort
+          ? String(detected.detectedAppPort)
+          : current,
+      );
+    }
+  }, [bootstrapDetectionQuery.data, daytona, daytonaDialogOpen]);
 
   const primaryScript = useMemo(() => {
     if (preferredScriptId) {
@@ -367,6 +425,66 @@ export default function ProjectScriptsControl({
     ],
   );
 
+  const openDaytonaDialog = useCallback(() => {
+    const detected = bootstrapDetectionQuery.data;
+    setDaytonaEnabled(daytona?.enabled ?? false);
+    setDaytonaRepoUrl(daytona?.repoUrl ?? detected?.detectedRepoUrl ?? "");
+    setDaytonaDefaultBranch(daytona?.defaultBranch ?? detected?.detectedDefaultBranch ?? "");
+    setDaytonaInstallCommand(
+      daytona?.installCommand ?? detected?.detectedDaytonaInstallCommand ?? "",
+    );
+    setDaytonaDevCommand(daytona?.devCommand ?? detected?.detectedDaytonaDevCommand ?? "");
+    setDaytonaPreviewPort(
+      String(daytona?.previewPort ?? detected?.detectedAppPort ?? DEFAULT_LOCALHOST_BASE_PORT),
+    );
+    setDaytonaValidationError(null);
+    setDaytonaDialogOpen(true);
+  }, [bootstrapDetectionQuery.data, daytona]);
+
+  const submitDaytona = useCallback(
+    async (event: FormEvent) => {
+      event.preventDefault();
+      const nextRepoUrl = daytonaRepoUrl.trim();
+      const nextDefaultBranch = daytonaDefaultBranch.trim();
+      const nextInstallCommand = daytonaInstallCommand.trim();
+      const nextDevCommand = daytonaDevCommand.trim();
+      const parsedPreviewPort = Number.parseInt(daytonaPreviewPort, 10);
+
+      if (daytonaEnabled && nextRepoUrl.length === 0) {
+        setDaytonaValidationError("Repository URL is required when Daytona is enabled.");
+        return;
+      }
+      if (daytonaEnabled && nextDefaultBranch.length === 0) {
+        setDaytonaValidationError("Default branch is required when Daytona is enabled.");
+        return;
+      }
+      if (!Number.isInteger(parsedPreviewPort) || parsedPreviewPort <= 0) {
+        setDaytonaValidationError("App port must be a positive integer.");
+        return;
+      }
+
+      setDaytonaValidationError(null);
+      await onSaveDaytona({
+        enabled: daytonaEnabled,
+        repoUrl: nextRepoUrl.length > 0 ? nextRepoUrl : null,
+        defaultBranch: nextDefaultBranch.length > 0 ? nextDefaultBranch : null,
+        installCommand: nextInstallCommand.length > 0 ? nextInstallCommand : null,
+        devCommand: nextDevCommand.length > 0 ? nextDevCommand : null,
+        previewPort: parsedPreviewPort,
+      });
+      setDaytonaDialogOpen(false);
+    },
+    [
+      daytonaDefaultBranch,
+      daytonaDevCommand,
+      daytonaEnabled,
+      daytonaInstallCommand,
+      daytonaPreviewPort,
+      daytonaRepoUrl,
+      onSaveDaytona,
+    ],
+  );
+
   return (
     <>
       {primaryScript ? (
@@ -445,6 +563,10 @@ export default function ProjectScriptsControl({
                 <RocketIcon className="size-4" />
                 Configure bootstrap
               </MenuItem>
+              <MenuItem className={dropdownItemClassName} onClick={openDaytonaDialog}>
+                <RocketIcon className="size-4" />
+                Configure Daytona
+              </MenuItem>
             </MenuPopup>
           </Menu>
         </Group>
@@ -472,10 +594,131 @@ export default function ProjectScriptsControl({
                 <RocketIcon className="size-4" />
                 Configure bootstrap
               </MenuItem>
+              <MenuItem className={dropdownItemClassName} onClick={openDaytonaDialog}>
+                <RocketIcon className="size-4" />
+                Configure Daytona
+              </MenuItem>
             </MenuPopup>
           </Menu>
         </Group>
       )}
+
+      <Dialog
+        open={daytonaDialogOpen}
+        onOpenChange={(open) => {
+          setDaytonaDialogOpen(open);
+          if (!open) {
+            setDaytonaValidationError(null);
+          }
+        }}
+      >
+        <DialogPopup>
+          <DialogHeader>
+            <DialogTitle>Daytona</DialogTitle>
+            <DialogDescription>
+              Configure remote preview workspaces for this project.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogPanel>
+            <form id={daytonaFormId} className="space-y-4" onSubmit={submitDaytona}>
+              <label className="flex items-center justify-between gap-3 rounded-md border border-border/70 px-3 py-2 text-sm">
+                <span>Enable Daytona previews</span>
+                <Switch
+                  checked={daytonaEnabled}
+                  onCheckedChange={(checked) => setDaytonaEnabled(Boolean(checked))}
+                />
+              </label>
+              <div className="space-y-1.5">
+                <Label htmlFor="daytona-server-status">Server status</Label>
+                <Input
+                  id="daytona-server-status"
+                  value={
+                    daytonaServerStatus?.configured
+                      ? `Ready${daytonaServerStatus.target ? ` (${daytonaServerStatus.target})` : ""}`
+                      : "Unavailable"
+                  }
+                  readOnly
+                />
+                {daytonaServerStatus?.message ? (
+                  <p className="text-xs text-muted-foreground">{daytonaServerStatus.message}</p>
+                ) : null}
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="daytona-repo-url">Repository URL</Label>
+                <Input
+                  id="daytona-repo-url"
+                  value={daytonaRepoUrl}
+                  placeholder={
+                    bootstrapDetectionQuery.data?.detectedRepoUrl ??
+                    "https://github.com/owner/repo.git"
+                  }
+                  onChange={(event) => setDaytonaRepoUrl(event.target.value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="daytona-default-branch">Default branch</Label>
+                <Input
+                  id="daytona-default-branch"
+                  value={daytonaDefaultBranch}
+                  placeholder={bootstrapDetectionQuery.data?.detectedDefaultBranch ?? "main"}
+                  onChange={(event) => setDaytonaDefaultBranch(event.target.value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="daytona-install-command">Install command override</Label>
+                <Input
+                  id="daytona-install-command"
+                  value={daytonaInstallCommand}
+                  placeholder={
+                    bootstrapDetectionQuery.data?.detectedDaytonaInstallCommand ?? "bun install"
+                  }
+                  onChange={(event) => setDaytonaInstallCommand(event.target.value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="daytona-dev-command">Dev command</Label>
+                <Input
+                  id="daytona-dev-command"
+                  value={daytonaDevCommand}
+                  placeholder={
+                    bootstrapDetectionQuery.data?.detectedDaytonaDevCommand ?? "bun run dev"
+                  }
+                  onChange={(event) => setDaytonaDevCommand(event.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Runs normally inside Daytona. The app port below is only used to open the preview.
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="daytona-preview-port">App port</Label>
+                <Input
+                  id="daytona-preview-port"
+                  inputMode="numeric"
+                  value={daytonaPreviewPort}
+                  placeholder={String(
+                    bootstrapDetectionQuery.data?.detectedAppPort ?? DEFAULT_LOCALHOST_BASE_PORT,
+                  )}
+                  onChange={(event) => setDaytonaPreviewPort(event.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Daytona uses this port to generate the preview URL after your app starts.
+                </p>
+              </div>
+              {daytonaValidationError ? (
+                <p className="text-sm text-destructive">{daytonaValidationError}</p>
+              ) : null}
+            </form>
+          </DialogPanel>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setDaytonaDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button form={daytonaFormId} type="submit">
+              Save Daytona
+            </Button>
+          </DialogFooter>
+        </DialogPopup>
+      </Dialog>
 
       <Dialog
         open={bootstrapDialogOpen}

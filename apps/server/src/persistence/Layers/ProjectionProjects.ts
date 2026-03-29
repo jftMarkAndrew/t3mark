@@ -2,7 +2,12 @@ import * as SqlClient from "effect/unstable/sql/SqlClient";
 import * as SqlSchema from "effect/unstable/sql/SqlSchema";
 import { Effect, Layer, Schema, Struct } from "effect";
 
-import { ModelSelection, ProjectBootstrapConfig, ProjectScript } from "@t3tools/contracts";
+import {
+  ModelSelection,
+  ProjectBootstrapConfig,
+  ProjectDaytonaConfig,
+  ProjectScript,
+} from "@t3tools/contracts";
 import { toPersistenceSqlError } from "../Errors.ts";
 import {
   DeleteProjectionProjectInput,
@@ -17,6 +22,7 @@ const ProjectionProjectDbRow = ProjectionProject.mapFields(
     defaultModelSelection: Schema.NullOr(Schema.fromJsonString(ModelSelection)),
     scripts: Schema.fromJsonString(Schema.Array(ProjectScript)),
     bootstrap: Schema.NullOr(Schema.fromJsonString(ProjectBootstrapConfig)),
+    daytona: Schema.NullOr(Schema.fromJsonString(ProjectDaytonaConfig)),
   }),
 );
 type ProjectionProjectDbRow = typeof ProjectionProjectDbRow.Type;
@@ -35,6 +41,7 @@ const makeProjectionProjectRepository = Effect.gen(function* () {
           default_model_selection_json,
           scripts_json,
           bootstrap_json,
+          daytona_json,
           created_at,
           updated_at,
           deleted_at
@@ -46,6 +53,7 @@ const makeProjectionProjectRepository = Effect.gen(function* () {
           ${row.defaultModelSelection !== null ? JSON.stringify(row.defaultModelSelection) : null},
           ${JSON.stringify(row.scripts)},
           ${row.bootstrap !== null ? JSON.stringify(row.bootstrap) : null},
+          ${row.daytona !== null ? JSON.stringify(row.daytona) : null},
           ${row.createdAt},
           ${row.updatedAt},
           ${row.deletedAt}
@@ -57,6 +65,7 @@ const makeProjectionProjectRepository = Effect.gen(function* () {
           default_model_selection_json = excluded.default_model_selection_json,
           scripts_json = excluded.scripts_json,
           bootstrap_json = excluded.bootstrap_json,
+          daytona_json = excluded.daytona_json,
           created_at = excluded.created_at,
           updated_at = excluded.updated_at,
           deleted_at = excluded.deleted_at
@@ -75,6 +84,7 @@ const makeProjectionProjectRepository = Effect.gen(function* () {
           default_model_selection_json AS "defaultModelSelection",
           scripts_json AS "scripts",
           bootstrap_json AS "bootstrap",
+          daytona_json AS "daytona",
           created_at AS "createdAt",
           updated_at AS "updatedAt",
           deleted_at AS "deletedAt"
@@ -95,6 +105,7 @@ const makeProjectionProjectRepository = Effect.gen(function* () {
           default_model_selection_json AS "defaultModelSelection",
           scripts_json AS "scripts",
           bootstrap_json AS "bootstrap",
+          daytona_json AS "daytona",
           created_at AS "createdAt",
           updated_at AS "updatedAt",
           deleted_at AS "deletedAt"

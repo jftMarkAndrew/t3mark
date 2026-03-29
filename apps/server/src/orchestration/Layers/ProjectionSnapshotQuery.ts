@@ -7,6 +7,7 @@ import {
   OrchestrationProposedPlanId,
   OrchestrationReadModel,
   ProjectBootstrapConfig,
+  ProjectDaytonaConfig,
   ProjectScript,
   ThreadId,
   TurnId,
@@ -50,6 +51,7 @@ const ProjectionProjectDbRowSchema = ProjectionProject.mapFields(
     defaultModelSelection: Schema.NullOr(Schema.fromJsonString(ModelSelection)),
     scripts: Schema.fromJsonString(Schema.Array(ProjectScript)),
     bootstrap: Schema.NullOr(Schema.fromJsonString(ProjectBootstrapConfig)),
+    daytona: Schema.NullOr(Schema.fromJsonString(ProjectDaytonaConfig)),
   }),
 );
 const ProjectionThreadMessageDbRowSchema = ProjectionThreadMessage.mapFields(
@@ -153,6 +155,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           default_model_selection_json AS "defaultModelSelection",
           scripts_json AS "scripts",
           bootstrap_json AS "bootstrap",
+          daytona_json AS "daytona",
           created_at AS "createdAt",
           updated_at AS "updatedAt",
           deleted_at AS "deletedAt"
@@ -553,6 +556,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
             defaultModelSelection: row.defaultModelSelection,
             scripts: row.scripts,
             bootstrap: row.bootstrap,
+            daytona: row.daytona,
             createdAt: row.createdAt,
             updatedAt: row.updatedAt,
             deletedAt: row.deletedAt,

@@ -108,7 +108,11 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import { toastManager } from "./ui/toast";
 import { resolveTrackedWorktreePath } from "../worktreeCleanup";
 import { decodeProjectScriptKeybindingRule } from "~/lib/projectScriptKeybindings";
-import { type NewProjectBootstrapInput, type NewProjectScriptInput } from "./ProjectScriptsControl";
+import {
+  type NewProjectBootstrapInput,
+  type NewProjectDaytonaInput,
+  type NewProjectScriptInput,
+} from "./ProjectScriptsControl";
 import {
   commandForProjectScript,
   DEFAULT_LOCALHOST_BASE_PORT,
@@ -187,7 +191,7 @@ import {
   SendPhase,
 } from "./ChatView.logic";
 import { useLocalStorage } from "~/hooks/useLocalStorage";
-import { forkQueryKeys } from "../lib/forkReactQuery";
+import { devHostsQueryOptions, forkQueryKeys } from "../lib/forkReactQuery";
 
 const ATTACHMENT_PREVIEW_HANDOFF_TTL_MS = 5000;
 const IMAGE_SIZE_LIMIT_LABEL = `${Math.round(PROVIDER_SEND_TURN_MAX_IMAGE_BYTES / (1024 * 1024))}MB`;
@@ -396,6 +400,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
   const [draftDevServerPortByThreadId, setDraftDevServerPortByThreadId] = useState<
     Partial<Record<ThreadId, number>>
   >({});
+  const [isLaunchingDaytona, setIsLaunchingDaytona] = useState(false);
   const [sendPhase, setSendPhase] = useState<SendPhase>("idle");
   const [sendStartedAt, setSendStartedAt] = useState<string | null>(null);
   const [isConnecting, _setIsConnecting] = useState(false);
@@ -665,7 +670,6 @@ export default function ChatView({ threadId }: ChatViewProps) {
     serverThread?.pendingLocalhostLaunch,
     serverThread?.devServerPort,
   ]);
-
   const openPullRequestDialog = useCallback(
     (reference?: string) => {
       if (!canCheckoutPullRequestIntoThread) {
@@ -790,6 +794,118 @@ export default function ChatView({ threadId }: ChatViewProps) {
     ? (sessionProvider ?? threadProvider ?? selectedProviderByThreadId ?? null)
     : null;
   const serverConfigQuery = useQuery(serverConfigQueryOptions());
+  const devHostsQuery = useQuery(devHostsQueryOptions());
+  const activeDaytonaHost = useMemo(
+    () =>
+      (devHostsQuery.data?.hosts ?? []).find(
+        (host) => host.threadId === activeThread?.id && host.launchKind === "daytona_preview",
+      ) ?? null,
+    [activeThread?.id, devHostsQuery.data?.hosts],
+  );
+  const surfacedDaytonaErrorRef = useRef<string | null>(null);
+  const daytonaTooltip = useMemo(() => {
+    if (activeDaytonaHost?.status === "error") {
+      return (
+        activeDaytonaHost.lastError ?? activeDaytonaHost.statusDetail ?? "Daytona launch failed."
+      );
+    }
+    if (activeDaytonaHost?.status === "starting") {
+      return activeDaytonaHost.statusDetail ?? "Launching Daytona preview.";
+    }
+    if (activeDaytonaHost?.status === "running" && activeDaytonaHost.url) {
+      return activeDaytonaHost.url;
+    }
+    return "Launch or open the Daytona preview for this thread.";
+  }, [
+    activeDaytonaHost?.lastError,
+    activeDaytonaHost?.status,
+    activeDaytonaHost?.statusDetail,
+    activeDaytonaHost?.url,
+  ]);
+  const daytonaLabel = useMemo(() => {
+    if (isLaunchingDaytona) {
+      return "Launching";
+    }
+    if (activeDaytonaHost?.status === "running" && activeDaytonaHost.url) {
+      return "Preview";
+    }
+    if (activeDaytonaHost?.status === "starting") {
+      const detail = activeDaytonaHost.statusDetail?.toLowerCase() ?? "";
+      if (detail.includes("upload")) return "Uploading";
+      if (detail.includes("install")) return "Installing";
+      if (detail.includes("scan")) return "Scanning";
+      if (detail.includes("waiting")) return "Waiting";
+      if (detail.includes("start")) return "Starting";
+      return "Launching";
+    }
+    if (activeDaytonaHost?.status === "error") {
+      return "Daytona Failed";
+    }
+    return "Daytona";
+  }, [
+    activeDaytonaHost?.status,
+    activeDaytonaHost?.statusDetail,
+    activeDaytonaHost?.url,
+    isLaunchingDaytona,
+  ]);
+  const daytonaDisabledReason = useMemo(() => {
+    if (!activeProject?.daytona?.enabled) {
+      return "Enable Daytona in the project settings first.";
+    }
+    if (!serverConfigQuery.data?.daytona?.configured) {
+      return serverConfigQuery.data?.daytona?.message ?? "Daytona is not configured on the server.";
+    }
+    if (isLaunchingDaytona || activeDaytonaHost?.status === "starting") {
+      return activeDaytonaHost?.statusDetail ?? "Launching Daytona preview.";
+    }
+    return null;
+  }, [
+    activeDaytonaHost?.statusDetail,
+    activeDaytonaHost?.status,
+    activeProject?.daytona?.enabled,
+    isLaunchingDaytona,
+    serverConfigQuery.data?.daytona?.configured,
+    serverConfigQuery.data?.daytona?.message,
+  ]);
+  useEffect(() => {
+    if (activeDaytonaHost?.status !== "error") {
+      surfacedDaytonaErrorRef.current = null;
+      return;
+    }
+
+    const description =
+      activeDaytonaHost.lastError ?? activeDaytonaHost.statusDetail ?? "Daytona launch failed.";
+    const errorSignature = `${activeDaytonaHost.id}:${description}`;
+    if (surfacedDaytonaErrorRef.current === errorSignature) {
+      return;
+    }
+    surfacedDaytonaErrorRef.current = errorSignature;
+
+    console.error("[daytona]", {
+      threadId: activeThread?.id ?? null,
+      hostId: activeDaytonaHost.id,
+      status: activeDaytonaHost.status,
+      statusDetail: activeDaytonaHost.statusDetail ?? null,
+      lastError: activeDaytonaHost.lastError ?? null,
+      url: activeDaytonaHost.url ?? null,
+    });
+
+    toastManager.add({
+      type: "error",
+      title: "Daytona failed",
+      description,
+      data: {
+        threadId: activeThread?.id ?? null,
+      },
+    });
+  }, [
+    activeDaytonaHost?.id,
+    activeDaytonaHost?.lastError,
+    activeDaytonaHost?.status,
+    activeDaytonaHost?.statusDetail,
+    activeDaytonaHost?.url,
+    activeThread?.id,
+  ]);
   const providerStatuses = serverConfigQuery.data?.providers ?? EMPTY_PROVIDERS;
   const unlockedSelectedProvider = resolveSelectableProvider(
     providerStatuses,
@@ -1821,6 +1937,32 @@ export default function ChatView({ threadId }: ChatViewProps) {
       updateBootstrapThreadState,
     ],
   );
+  const runDaytona = useCallback(async () => {
+    const api = readNativeApi();
+    if (!api || !activeThreadId) return;
+
+    if (activeDaytonaHost?.status === "running" && activeDaytonaHost.url) {
+      await api.shell.openExternal(activeDaytonaHost.url);
+      return;
+    }
+
+    try {
+      setIsLaunchingDaytona(true);
+      await api.daytona.launch({ threadId: activeThreadId });
+      await queryClient.invalidateQueries({ queryKey: forkQueryKeys.devHosts() });
+    } catch (error) {
+      toastManager.add({
+        type: "error",
+        title: "Failed to launch Daytona preview.",
+        description: error instanceof Error ? error.message : "An error occurred.",
+      });
+      await queryClient.invalidateQueries({ queryKey: forkQueryKeys.devHosts() });
+    } finally {
+      window.setTimeout(() => {
+        setIsLaunchingDaytona(false);
+      }, 250);
+    }
+  }, [activeDaytonaHost?.status, activeDaytonaHost?.url, activeThreadId, queryClient]);
   const launchProjectScript = useCallback(
     async (script: ProjectScript) => {
       if (script.runAsLocalhostLauncher) {
@@ -2022,6 +2164,26 @@ export default function ChatView({ threadId }: ChatViewProps) {
       });
     },
     [activeProject, queryClient],
+  );
+  const saveProjectDaytona = useCallback(
+    async (input: NewProjectDaytonaInput) => {
+      const api = readNativeApi();
+      if (!api || !activeProject) return;
+      await api.orchestration.dispatchCommand({
+        type: "project.meta.update",
+        commandId: newCommandId(),
+        projectId: activeProject.id,
+        daytona: {
+          enabled: input.enabled,
+          repoUrl: input.repoUrl,
+          defaultBranch: input.defaultBranch,
+          installCommand: input.installCommand,
+          devCommand: input.devCommand,
+          previewPort: input.previewPort,
+        },
+      });
+    },
+    [activeProject],
   );
   const saveProjectScript = useCallback(
     async (input: NewProjectScriptInput) => {
@@ -4105,6 +4267,8 @@ export default function ChatView({ threadId }: ChatViewProps) {
           activeProjectCwd={activeProject?.cwd ?? null}
           activeProjectScripts={activeProject?.scripts}
           activeProjectBootstrap={activeProject?.bootstrap ?? null}
+          activeProjectDaytona={activeProject?.daytona ?? null}
+          daytonaServerStatus={serverConfigQuery.data?.daytona ?? null}
           preferredScriptId={
             activeProject ? (lastInvokedScriptByProjectId[activeProject.id] ?? null) : null
           }
@@ -4114,6 +4278,9 @@ export default function ChatView({ threadId }: ChatViewProps) {
           localhostLauncherScript={effectiveLocalhostLauncherScript}
           localhostLauncherDisabledReason={localhostLauncherDisabledReason}
           localhostLauncherLabel={localhostLauncherLabel}
+          daytonaDisabledReason={daytonaDisabledReason}
+          daytonaTooltip={daytonaTooltip}
+          daytonaLabel={daytonaLabel}
           terminalOpen={terminalState.terminalOpen}
           terminalToggleShortcutLabel={terminalToggleShortcutLabel}
           diffToggleShortcutLabel={diffPanelShortcutLabel}
@@ -4126,8 +4293,12 @@ export default function ChatView({ threadId }: ChatViewProps) {
           onUpdateProjectScript={updateProjectScript}
           onDeleteProjectScript={deleteProjectScript}
           onSaveProjectBootstrap={saveProjectBootstrap}
+          onSaveProjectDaytona={saveProjectDaytona}
           onRunLocalhostLauncher={() => {
             void runLocalhostLauncher();
+          }}
+          onRunDaytona={() => {
+            void runDaytona();
           }}
           bootstrapStatus={serverThread?.worktreePath ? serverThread.bootstrapStatus : null}
           bootstrapError={serverThread?.bootstrapLastError ?? null}

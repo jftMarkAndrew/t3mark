@@ -152,6 +152,7 @@ function mapProjectsFromReadModel(
       updatedAt: project.updatedAt,
       scripts: project.scripts.map((script) => ({ ...script })),
       bootstrap: project.bootstrap ? { ...project.bootstrap } : null,
+      daytona: project.daytona ? { ...project.daytona } : null,
     } satisfies Project;
   });
 

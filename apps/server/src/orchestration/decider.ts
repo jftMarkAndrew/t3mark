@@ -80,6 +80,8 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           workspaceRoot: command.workspaceRoot,
           defaultModelSelection: command.defaultModelSelection ?? null,
           scripts: [],
+          bootstrap: null,
+          daytona: null,
           createdAt: command.createdAt,
           updatedAt: command.createdAt,
         },
@@ -122,6 +124,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
             : {}),
           ...(command.scripts !== undefined ? { scripts: command.scripts } : {}),
           ...(command.bootstrap !== undefined ? { bootstrap: command.bootstrap } : {}),
+          ...(command.daytona !== undefined ? { daytona: command.daytona } : {}),
           updatedAt: occurredAt,
         },
       };

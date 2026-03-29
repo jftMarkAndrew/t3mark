@@ -11,7 +11,12 @@ import {
   OrchestrationGetTurnDiffInput,
   OrchestrationReplayEventsInput,
 } from "./orchestration";
-import { DevHostRegisterInput, DevHostStopInput } from "./devHost";
+import {
+  DaytonaLaunchInput,
+  DaytonaStopInput,
+  DevHostRegisterInput,
+  DevHostStopInput,
+} from "./devHost";
 import {
   GitActionProgressEvent,
   GitCheckoutInput,
@@ -88,6 +93,8 @@ export const WS_METHODS = {
   devHostsRegister: "devHosts.register",
   devHostsList: "devHosts.list",
   devHostsStop: "devHosts.stop",
+  daytonaLaunch: "daytona.launch",
+  daytonaStop: "daytona.stop",
 
   // Server meta
   serverGetConfig: "server.getConfig",
@@ -165,6 +172,8 @@ const WebSocketRequestBody = Schema.Union([
   tagRequestBody(WS_METHODS.devHostsRegister, DevHostRegisterInput),
   tagRequestBody(WS_METHODS.devHostsList, Schema.Struct({})),
   tagRequestBody(WS_METHODS.devHostsStop, DevHostStopInput),
+  tagRequestBody(WS_METHODS.daytonaLaunch, DaytonaLaunchInput),
+  tagRequestBody(WS_METHODS.daytonaStop, DaytonaStopInput),
 
   // Server meta
   tagRequestBody(WS_METHODS.serverGetConfig, Schema.Struct({})),

@@ -419,12 +419,19 @@ export default function Sidebar() {
   const queryClient = useQueryClient();
   const removeWorktreeMutation = useMutation(gitRemoveWorktreeMutationOptions({ queryClient }));
   const stopDevHostMutation = useMutation({
-    mutationFn: async (hostId: string) => {
+    mutationFn: async (input: {
+      hostId: string;
+      launchKind: "localhost_launcher" | "daytona_preview";
+    }) => {
       const api = readNativeApi();
       if (!api) {
         throw new Error("Dev hosts are unavailable.");
       }
-      await api.devHosts.stop({ hostId });
+      if (input.launchKind === "daytona_preview") {
+        await api.daytona.stop({ hostId: input.hostId });
+        return;
+      }
+      await api.devHosts.stop({ hostId: input.hostId });
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: forkQueryKeys.devHosts() });
@@ -433,7 +440,11 @@ export default function Sidebar() {
   const devHostsQuery = useQuery(devHostsQueryOptions());
   const [hiddenDevHostIds, setHiddenDevHostIds] = useState<ReadonlySet<string>>(() => new Set());
   const handleStopDevHost = useCallback(
-    (event: MouseEvent<HTMLElement>, hostId: string) => {
+    (
+      event: MouseEvent<HTMLElement>,
+      hostId: string,
+      launchKind: "localhost_launcher" | "daytona_preview",
+    ) => {
       event.preventDefault();
       event.stopPropagation();
       setHiddenDevHostIds((current) => {
@@ -441,7 +452,7 @@ export default function Sidebar() {
         next.add(hostId);
         return next;
       });
-      void stopDevHostMutation.mutateAsync(hostId).catch((error) => {
+      void stopDevHostMutation.mutateAsync({ hostId, launchKind }).catch((error) => {
         setHiddenDevHostIds((current) => {
           const next = new Set(current);
           next.delete(hostId);
@@ -1488,13 +1499,42 @@ export default function Sidebar() {
                         onClickCapture={(event) => {
                           event.stopPropagation();
                         }}
-                        aria-label={`Running on port ${runningHost.port}`}
+                        aria-label={
+                          runningHost.launchKind === "daytona_preview"
+                            ? (runningHost.statusDetail ?? "Daytona preview running")
+                            : `Running on port ${runningHost.port}`
+                        }
                       />
                     }
                   >
-                    {`:${runningHost.port}`}
+                    {runningHost.launchKind === "daytona_preview"
+                      ? runningHost.status === "error"
+                        ? "Daytona!"
+                        : runningHost.status === "starting"
+                          ? "Starting"
+                          : runningHost.url
+                            ? "Preview"
+                            : "Daytona"
+                      : `:${runningHost.port}`}
                   </MenuTrigger>
                   <MenuPopup align="end">
+                    {runningHost.launchKind === "daytona_preview" && runningHost.url ? (
+                      <MenuItem
+                        data-dev-host-control="true"
+                        onPointerDownCapture={(event) => {
+                          event.stopPropagation();
+                        }}
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          const api = readNativeApi();
+                          if (!api || !runningHost.url) return;
+                          void api.shell.openExternal(runningHost.url);
+                        }}
+                      >
+                        Open preview
+                      </MenuItem>
+                    ) : null}
                     <MenuItem
                       disabled={stopDevHostMutation.isPending}
                       data-dev-host-control="true"
@@ -1502,7 +1542,7 @@ export default function Sidebar() {
                         event.stopPropagation();
                       }}
                       onClick={(event) => {
-                        handleStopDevHost(event, runningHost.id);
+                        handleStopDevHost(event, runningHost.id, runningHost.launchKind);
                       }}
                     >
                       Stop

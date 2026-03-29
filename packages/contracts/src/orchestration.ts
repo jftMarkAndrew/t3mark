@@ -163,6 +163,26 @@ export const ProjectBootstrapConfig = Schema.Struct({
 });
 export type ProjectBootstrapConfig = typeof ProjectBootstrapConfig.Type;
 
+export const ProjectDaytonaConfig = Schema.Struct({
+  enabled: Schema.optional(Schema.Boolean).pipe(Schema.withDecodingDefault(() => false)),
+  repoUrl: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)).pipe(
+    Schema.withDecodingDefault(() => null),
+  ),
+  defaultBranch: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)).pipe(
+    Schema.withDecodingDefault(() => null),
+  ),
+  installCommand: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)).pipe(
+    Schema.withDecodingDefault(() => null),
+  ),
+  devCommand: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)).pipe(
+    Schema.withDecodingDefault(() => null),
+  ),
+  previewPort: Schema.optional(Schema.NullOr(Schema.Int)).pipe(
+    Schema.withDecodingDefault(() => null),
+  ),
+});
+export type ProjectDaytonaConfig = typeof ProjectDaytonaConfig.Type;
+
 export const ThreadBootstrapStatus = Schema.Literals(["idle", "running", "ready", "failed"]);
 export type ThreadBootstrapStatus = typeof ThreadBootstrapStatus.Type;
 
@@ -173,6 +193,9 @@ export const OrchestrationProject = Schema.Struct({
   defaultModelSelection: Schema.NullOr(ModelSelection),
   scripts: Schema.Array(ProjectScript),
   bootstrap: Schema.optional(Schema.NullOr(ProjectBootstrapConfig)).pipe(
+    Schema.withDecodingDefault(() => null),
+  ),
+  daytona: Schema.optional(Schema.NullOr(ProjectDaytonaConfig)).pipe(
     Schema.withDecodingDefault(() => null),
   ),
   createdAt: IsoDateTime,
@@ -363,6 +386,7 @@ const ProjectMetaUpdateCommand = Schema.Struct({
   defaultModelSelection: Schema.optional(Schema.NullOr(ModelSelection)),
   scripts: Schema.optional(Schema.Array(ProjectScript)),
   bootstrap: Schema.optional(Schema.NullOr(ProjectBootstrapConfig)),
+  daytona: Schema.optional(Schema.NullOr(ProjectDaytonaConfig)),
 });
 
 const ProjectDeleteCommand = Schema.Struct({
@@ -672,6 +696,9 @@ export const ProjectCreatedPayload = Schema.Struct({
   bootstrap: Schema.optional(Schema.NullOr(ProjectBootstrapConfig)).pipe(
     Schema.withDecodingDefault(() => null),
   ),
+  daytona: Schema.optional(Schema.NullOr(ProjectDaytonaConfig)).pipe(
+    Schema.withDecodingDefault(() => null),
+  ),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });
@@ -683,6 +710,7 @@ export const ProjectMetaUpdatedPayload = Schema.Struct({
   defaultModelSelection: Schema.optional(Schema.NullOr(ModelSelection)),
   scripts: Schema.optional(Schema.Array(ProjectScript)),
   bootstrap: Schema.optional(Schema.NullOr(ProjectBootstrapConfig)),
+  daytona: Schema.optional(Schema.NullOr(ProjectDaytonaConfig)),
   updatedAt: IsoDateTime,
 });
 

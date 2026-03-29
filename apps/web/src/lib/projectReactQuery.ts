@@ -20,6 +20,11 @@ const EMPTY_BOOTSTRAP_RESULT: ProjectDetectBootstrapResult = {
   installCommand: null,
   devCommand: null,
   detectedPackageManager: null,
+  detectedRepoUrl: null,
+  detectedDefaultBranch: null,
+  detectedDaytonaInstallCommand: null,
+  detectedDaytonaDevCommand: null,
+  detectedAppPort: null,
 };
 
 export function projectDetectBootstrapQueryOptions(input: {

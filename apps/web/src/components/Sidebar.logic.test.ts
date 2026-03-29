@@ -416,6 +416,7 @@ function makeProject(overrides: Partial<Project> = {}): Project {
     updatedAt: "2026-03-09T10:00:00.000Z",
     scripts: [],
     bootstrap: null,
+    daytona: null,
     ...rest,
   };
 }

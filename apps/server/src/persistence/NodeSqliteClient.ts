@@ -20,7 +20,7 @@ import * as Stream from "effect/Stream";
 import * as Reactivity from "effect/unstable/reactivity/Reactivity";
 import * as Client from "effect/unstable/sql/SqlClient";
 import type { Connection } from "effect/unstable/sql/SqlConnection";
-import { SqlError } from "effect/unstable/sql/SqlError";
+import { SqlError, UnknownError } from "effect/unstable/sql/SqlError";
 import * as Statement from "effect/unstable/sql/Statement";
 
 const ATTR_DB_SYSTEM_NAME = "db.system.name";
@@ -114,8 +114,10 @@ const makeWithDatabase = (
             }),
             catch: (cause) =>
               new SqlError({
-                cause,
-                message: "Failed to prepare statement",
+                reason: new UnknownError({
+                  cause,
+                  message: "Failed to prepare statement",
+                }),
               }),
           }),
       });
@@ -140,8 +142,10 @@ const makeWithDatabase = (
           } catch (cause) {
             return Effect.fail(
               new SqlError({
-                cause,
-                message: "Failed to execute statement",
+                reason: new UnknownError({
+                  cause,
+                  message: "Failed to execute statement",
+                }),
               }),
             );
           }
@@ -171,8 +175,10 @@ const makeWithDatabase = (
               },
               catch: (cause) =>
                 new SqlError({
-                  cause,
-                  message: "Failed to execute statement",
+                  reason: new UnknownError({
+                    cause,
+                    message: "Failed to execute statement",
+                  }),
                 }),
             }),
           (prepared) =>

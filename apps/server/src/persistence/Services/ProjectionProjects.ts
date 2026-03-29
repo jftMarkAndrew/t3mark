@@ -10,6 +10,7 @@ import {
   IsoDateTime,
   ModelSelection,
   ProjectBootstrapConfig,
+  ProjectDaytonaConfig,
   ProjectId,
   ProjectScript,
 } from "@t3tools/contracts";
@@ -25,6 +26,7 @@ export const ProjectionProject = Schema.Struct({
   defaultModelSelection: Schema.NullOr(ModelSelection),
   scripts: Schema.Array(ProjectScript),
   bootstrap: Schema.NullOr(ProjectBootstrapConfig),
+  daytona: Schema.NullOr(ProjectDaytonaConfig),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
   deletedAt: Schema.NullOr(IsoDateTime),

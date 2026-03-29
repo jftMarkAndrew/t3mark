@@ -1,18 +1,29 @@
 import {
+  type DaytonaServerStatus,
   type EditorId,
   type ProjectBootstrapConfig,
+  type ProjectDaytonaConfig,
   type ProjectScript,
   type ResolvedKeybindingsConfig,
   type ThreadId,
 } from "@t3tools/contracts";
 import { memo } from "react";
 import GitActionsControl from "../GitActionsControl";
-import { AlertTriangleIcon, DiffIcon, RocketIcon, TerminalSquareIcon } from "lucide-react";
+import {
+  AlertTriangleIcon,
+  CloudIcon,
+  DiffIcon,
+  RocketIcon,
+  TerminalSquareIcon,
+} from "lucide-react";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import ProjectScriptsControl, { type NewProjectScriptInput } from "../ProjectScriptsControl";
-import { type NewProjectBootstrapInput } from "../ProjectScriptsControl";
+import ProjectScriptsControl, {
+  type NewProjectBootstrapInput,
+  type NewProjectDaytonaInput,
+  type NewProjectScriptInput,
+} from "../ProjectScriptsControl";
 import { Toggle } from "../ui/toggle";
 import { SidebarTrigger } from "../ui/sidebar";
 import { OpenInPicker } from "./OpenInPicker";
@@ -26,6 +37,8 @@ interface ChatHeaderProps {
   activeProjectCwd: string | null;
   activeProjectScripts: ProjectScript[] | undefined;
   activeProjectBootstrap: ProjectBootstrapConfig | null;
+  activeProjectDaytona: ProjectDaytonaConfig | null;
+  daytonaServerStatus: DaytonaServerStatus | null;
   preferredScriptId: string | null;
   keybindings: ResolvedKeybindingsConfig;
   availableEditors: ReadonlyArray<EditorId>;
@@ -33,6 +46,9 @@ interface ChatHeaderProps {
   localhostLauncherScript: ProjectScript | null;
   localhostLauncherDisabledReason: string | null;
   localhostLauncherLabel: string;
+  daytonaDisabledReason: string | null;
+  daytonaTooltip: string;
+  daytonaLabel: string;
   terminalOpen: boolean;
   terminalToggleShortcutLabel: string | null;
   diffToggleShortcutLabel: string | null;
@@ -43,7 +59,9 @@ interface ChatHeaderProps {
   onUpdateProjectScript: (scriptId: string, input: NewProjectScriptInput) => Promise<void>;
   onDeleteProjectScript: (scriptId: string) => Promise<void>;
   onSaveProjectBootstrap: (input: NewProjectBootstrapInput) => Promise<void>;
+  onSaveProjectDaytona: (input: NewProjectDaytonaInput) => Promise<void>;
   onRunLocalhostLauncher: () => void;
+  onRunDaytona: () => void;
   bootstrapStatus: "idle" | "running" | "ready" | "failed" | null;
   bootstrapError: string | null;
   onRetryBootstrap: () => void;
@@ -60,6 +78,8 @@ export const ChatHeader = memo(function ChatHeader({
   activeProjectCwd,
   activeProjectScripts,
   activeProjectBootstrap,
+  activeProjectDaytona,
+  daytonaServerStatus,
   preferredScriptId,
   keybindings,
   availableEditors,
@@ -67,6 +87,9 @@ export const ChatHeader = memo(function ChatHeader({
   localhostLauncherScript,
   localhostLauncherDisabledReason,
   localhostLauncherLabel,
+  daytonaDisabledReason,
+  daytonaTooltip,
+  daytonaLabel,
   terminalOpen,
   terminalToggleShortcutLabel,
   diffToggleShortcutLabel,
@@ -77,13 +100,17 @@ export const ChatHeader = memo(function ChatHeader({
   onUpdateProjectScript,
   onDeleteProjectScript,
   onSaveProjectBootstrap,
+  onSaveProjectDaytona,
   onRunLocalhostLauncher,
+  onRunDaytona,
   bootstrapStatus,
   bootstrapError,
   onRetryBootstrap,
   onToggleTerminal,
   onToggleDiff,
 }: ChatHeaderProps) {
+  const daytonaFailed = daytonaLabel === "Daytona Failed";
+
   return (
     <div className="@container/header-actions flex min-w-0 flex-1 items-center gap-2">
       <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden sm:gap-3">
@@ -110,6 +137,8 @@ export const ChatHeader = memo(function ChatHeader({
           <ProjectScriptsControl
             projectCwd={activeProjectCwd ?? ""}
             bootstrap={activeProjectBootstrap}
+            daytona={activeProjectDaytona}
+            daytonaServerStatus={daytonaServerStatus}
             scripts={activeProjectScripts}
             keybindings={keybindings}
             preferredScriptId={preferredScriptId}
@@ -118,6 +147,7 @@ export const ChatHeader = memo(function ChatHeader({
             onUpdateScript={onUpdateProjectScript}
             onDeleteScript={onDeleteProjectScript}
             onSaveBootstrap={onSaveProjectBootstrap}
+            onSaveDaytona={onSaveProjectDaytona}
           />
         )}
         {bootstrapStatus ? (
@@ -178,6 +208,30 @@ export const ChatHeader = memo(function ChatHeader({
             <TooltipPopup side="bottom">
               {localhostLauncherDisabledReason ?? localhostLauncherScript.command}
             </TooltipPopup>
+          </Tooltip>
+        ) : null}
+        {activeProjectDaytona?.enabled ? (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  className="shrink-0"
+                  variant={daytonaFailed ? "destructive" : "outline"}
+                  size="xs"
+                  onClick={onRunDaytona}
+                  disabled={daytonaDisabledReason !== null}
+                  title="Daytona preview"
+                >
+                  {daytonaFailed ? (
+                    <AlertTriangleIcon className="size-3" />
+                  ) : (
+                    <CloudIcon className="size-3" />
+                  )}
+                  <span>{daytonaLabel}</span>
+                </Button>
+              }
+            />
+            <TooltipPopup side="bottom">{daytonaDisabledReason ?? daytonaTooltip}</TooltipPopup>
           </Tooltip>
         ) : null}
         <Tooltip>

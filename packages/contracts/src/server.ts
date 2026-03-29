@@ -58,6 +58,20 @@ export type ServerProvider = typeof ServerProvider.Type;
 
 const ServerProviders = Schema.Array(ServerProvider);
 
+export const DaytonaServerStatus = Schema.Struct({
+  configured: Schema.Boolean,
+  apiUrl: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)).pipe(
+    Schema.withDecodingDefault(() => null),
+  ),
+  target: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)).pipe(
+    Schema.withDecodingDefault(() => null),
+  ),
+  message: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)).pipe(
+    Schema.withDecodingDefault(() => null),
+  ),
+});
+export type DaytonaServerStatus = typeof DaytonaServerStatus.Type;
+
 export const ServerConfig = Schema.Struct({
   cwd: TrimmedNonEmptyString,
   keybindingsConfigPath: TrimmedNonEmptyString,
@@ -66,6 +80,7 @@ export const ServerConfig = Schema.Struct({
   providers: ServerProviders,
   availableEditors: Schema.Array(EditorId),
   settings: ServerSettings,
+  daytona: Schema.optional(DaytonaServerStatus),
 });
 export type ServerConfig = typeof ServerConfig.Type;
 
