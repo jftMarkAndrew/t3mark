@@ -13,7 +13,9 @@ import {
   DaytonaError,
   DaytonaService,
   formatDaytonaErrorMessage,
+  parseGitHubRepoUrl,
   resolveDaytonaCredentials,
+  resolveDaytonaGitToken,
   resolveDaytonaServerStatus,
   type DaytonaShape,
 } from "../Services/Daytona";
@@ -61,10 +63,57 @@ const DAYTONA_IGNORED_DIRECTORY_NAMES = new Set([
   "dist",
   "build",
   "coverage",
+  ".angular",
+  "out-tsc",
+  ".cache",
+  "out",
+  "tmp",
   ".idea",
   ".vscode",
 ]);
 const DAYTONA_IGNORED_FILE_NAMES = new Set([".DS_Store", ".git"]);
+
+interface PackageJsonLike {
+  readonly name?: string | null;
+  readonly scripts?: Record<string, string> | null;
+  readonly dependencies?: Record<string, string> | null;
+  readonly devDependencies?: Record<string, string> | null;
+}
+
+export interface DaytonaLaunchSandbox {
+  readonly id: string;
+  readonly process: {
+    executeCommand: (command: string) => Promise<unknown>;
+    deleteSession: (sessionId: string) => Promise<unknown>;
+    createSession: (sessionId: string) => Promise<unknown>;
+    executeSessionCommand: (
+      sessionId: string,
+      input: { command: string; runAsync: boolean },
+    ) => Promise<unknown>;
+  };
+  readonly fs: {
+    uploadFiles: (
+      files: Array<{ source: string; destination: string }>,
+      timeoutSeconds: number,
+    ) => Promise<unknown>;
+  };
+  readonly getSignedPreviewUrl: (
+    port: number,
+    expirySeconds: number,
+  ) => Promise<{ url?: string | null }>;
+}
+
+export type DaytonaSourceStrategy =
+  | {
+      readonly kind: "clone";
+      readonly repoUrl: string;
+      readonly branch: string | null;
+      readonly gitToken: string;
+    }
+  | {
+      readonly kind: "upload";
+      readonly sourceWorkspacePath: string;
+    };
 
 function hostId(threadId: string, workspaceId: string): string {
   return `${threadId}:${workspaceId}`;
@@ -164,10 +213,10 @@ async function statIfExists(targetPath: string) {
   }
 }
 
-async function readPackageJsonLike(cwd: string): Promise<{ name?: string | null } | null> {
+async function readPackageJsonLike(cwd: string): Promise<PackageJsonLike | null> {
   try {
     const contents = await fs.readFile(path.join(cwd, "package.json"), "utf8");
-    return JSON.parse(contents) as { name?: string | null };
+    return JSON.parse(contents) as PackageJsonLike;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
       return null;
@@ -374,6 +423,54 @@ function resolveDevCommand(project: OrchestrationProject): string | null {
   );
 }
 
+function hasPackage(packageJson: PackageJsonLike | null, packageName: string): boolean {
+  return Boolean(
+    packageJson?.dependencies?.[packageName] ?? packageJson?.devDependencies?.[packageName],
+  );
+}
+
+function isAngularProject(packageJson: PackageJsonLike | null, devCommand: string): boolean {
+  return (
+    hasPackage(packageJson, "@angular/core") ||
+    hasPackage(packageJson, "@angular/cli") ||
+    devCommand.toLowerCase().includes("ng serve")
+  );
+}
+
+function hasPortFlag(command: string): boolean {
+  return /(?:^|\s)(?:--port(?:=|\s+)|-p\s+)\d{2,5}(?:\s|$)/.test(command);
+}
+
+function hasHostFlag(command: string): boolean {
+  return /(?:^|\s)--host(?:=|\s+)[^\s]+(?:\s|$)/.test(command);
+}
+
+export function normalizeDaytonaDevCommand(params: {
+  packageJson: PackageJsonLike | null;
+  devCommand: string;
+  previewPort: number;
+}): string {
+  const trimmed = params.devCommand.trim();
+  if (!isAngularProject(params.packageJson, trimmed)) {
+    return trimmed;
+  }
+
+  if (hasHostFlag(trimmed) && hasPortFlag(trimmed)) {
+    return trimmed;
+  }
+
+  const lower = trimmed.toLowerCase();
+  const hostPortFlags = `${hasHostFlag(trimmed) ? "" : " --host 0.0.0.0"}${
+    hasPortFlag(trimmed) ? "" : ` --port ${params.previewPort}`
+  }`;
+
+  if (/^(npm run|pnpm|bun run) start(?:\s|$)/.test(lower) && !trimmed.includes(" -- ")) {
+    return `${trimmed} --${hostPortFlags}`;
+  }
+
+  return `${trimmed}${hostPortFlags}`;
+}
+
 function resolveSandboxImage(params: { installCommand: string | null; devCommand: string }): Image {
   const combined = `${params.installCommand ?? ""}\n${params.devCommand}`.toLowerCase();
   const baseImage = combined.includes("bun ") ? DAYTONA_BUN_IMAGE : DAYTONA_NODE_IMAGE;
@@ -420,8 +517,55 @@ async function createSandboxWithFallback(params: {
     : new Error(String(createFailure ?? "Failed to create Daytona workspace."));
 }
 
-function resolveBranch(thread: OrchestrationThread, project: OrchestrationProject): string | null {
+export function resolveBranch(
+  thread: OrchestrationThread,
+  project: OrchestrationProject,
+): string | null {
   return thread.branch ?? project.daytona?.defaultBranch ?? null;
+}
+
+export function resolveDaytonaSourceStrategy(params: {
+  project: OrchestrationProject;
+  thread: OrchestrationThread;
+  sourceWorkspacePath: string;
+  gitToken: string | null;
+}): DaytonaSourceStrategy {
+  const repoUrl = params.project.daytona?.repoUrl?.trim() ?? "";
+  if (repoUrl.length === 0) {
+    return {
+      kind: "upload",
+      sourceWorkspacePath: params.sourceWorkspacePath,
+    };
+  }
+
+  const githubRepo = parseGitHubRepoUrl(repoUrl);
+  if (!githubRepo) {
+    throw new Error("Only HTTPS GitHub repository URLs are supported for Daytona clones.");
+  }
+  if (!params.gitToken) {
+    throw new Error(
+      "DAYTONA_GIT_TOKEN is required to launch Daytona previews from GitHub repositories.",
+    );
+  }
+
+  return {
+    kind: "clone",
+    repoUrl: githubRepo.normalizedUrl,
+    branch: resolveBranch(params.thread, params.project),
+    gitToken: params.gitToken,
+  };
+}
+
+export function buildGitHubCloneCommand(params: {
+  repoUrl: string;
+  branch: string | null;
+  gitToken: string;
+}): string {
+  const encodedToken = encodeURIComponent(params.gitToken);
+  const branchArgs = params.branch
+    ? ` --branch ${shellQuote(params.branch)} --single-branch`
+    : " --single-branch";
+  return `git -c url."https://x-access-token:${encodedToken}@github.com/".insteadOf=https://github.com/ clone --depth 1${branchArgs} ${shellQuote(params.repoUrl)} ${shellQuote(DAYTONA_REPO_DIR)}`;
 }
 
 function resolveThreadContext(
@@ -484,6 +628,104 @@ async function waitForSandboxHttpReady(sandbox: Sandbox, port: number): Promise<
   throw lastError instanceof Error
     ? lastError
     : new Error(`Timed out waiting for the Daytona app to respond on port ${port}.`);
+}
+
+async function populateSandboxWorkspace(params: {
+  sandbox: DaytonaLaunchSandbox;
+  sourceStrategy: DaytonaSourceStrategy;
+  onStatus: (statusDetail: string) => Promise<void>;
+}): Promise<void> {
+  await params.onStatus(
+    params.sourceStrategy.kind === "clone" ? "Cloning repository" : "Preparing sandbox workspace",
+  );
+  await withDaytonaStep("prepare sandbox workspace", () =>
+    params.sandbox.process.executeCommand(`mkdir -p ${shellQuote("workspace")}`),
+  );
+
+  const { sourceStrategy } = params;
+
+  if (sourceStrategy.kind === "clone") {
+    await withDaytonaStep("clone repository", () =>
+      params.sandbox.process.executeCommand(
+        buildGitHubCloneCommand({
+          repoUrl: sourceStrategy.repoUrl,
+          branch: sourceStrategy.branch,
+          gitToken: sourceStrategy.gitToken,
+        }),
+      ),
+    );
+    return;
+  }
+
+  await params.onStatus("Scanning local workspace");
+  const workspaceFiles = await withDaytonaStep("scan local workspace", () =>
+    collectWorkspaceFiles(sourceStrategy.sourceWorkspacePath),
+  );
+  await params.onStatus("Preparing sandbox workspace");
+  await withDaytonaStep("prepare sandbox repo directory", () =>
+    params.sandbox.process.executeCommand(`mkdir -p ${shellQuote(DAYTONA_REPO_DIR)}`),
+  );
+  for (let index = 0; index < workspaceFiles.length; index += DAYTONA_UPLOAD_BATCH_SIZE) {
+    const batch = workspaceFiles.slice(index, index + DAYTONA_UPLOAD_BATCH_SIZE);
+    await params.onStatus(
+      formatUploadPhase(index + 1, index + batch.length, workspaceFiles.length),
+    );
+    await withDaytonaStep(
+      formatUploadPhase(index + 1, index + batch.length, workspaceFiles.length),
+      () => params.sandbox.fs.uploadFiles(batch, DAYTONA_SYNC_TIMEOUT_SECONDS),
+    );
+  }
+}
+
+export async function launchDaytonaSandboxPreview(params: {
+  sandbox: DaytonaLaunchSandbox;
+  sourceStrategy: DaytonaSourceStrategy;
+  installCommand: string | null;
+  devCommand: string;
+  previewPort: number;
+  onStatus: (statusDetail: string) => Promise<void>;
+}): Promise<string> {
+  const installCommand = params.installCommand;
+  await populateSandboxWorkspace({
+    sandbox: params.sandbox,
+    sourceStrategy: params.sourceStrategy,
+    onStatus: params.onStatus,
+  });
+  if (installCommand) {
+    await params.onStatus("Installing dependencies");
+    await withDaytonaStep("install dependencies", () =>
+      runBlockingPtyCommand({
+        sandbox: params.sandbox as Sandbox,
+        label: "install dependencies",
+        command: installCommand,
+        cwd: DAYTONA_REPO_DIR,
+        timeoutSeconds: DAYTONA_INSTALL_TIMEOUT_SECONDS,
+      }),
+    );
+  }
+  try {
+    await params.sandbox.process.deleteSession(DAYTONA_SESSION_ID);
+  } catch {
+    // Ignore missing sessions.
+  }
+  await params.onStatus("Starting dev server");
+  await withDaytonaStep("create preview session", () =>
+    params.sandbox.process.createSession(DAYTONA_SESSION_ID),
+  );
+  await withDaytonaStep("start dev command", () =>
+    params.sandbox.process.executeSessionCommand(DAYTONA_SESSION_ID, {
+      command: `cd ${DAYTONA_REPO_DIR} && ${params.devCommand}`,
+      runAsync: true,
+    }),
+  );
+  await params.onStatus(`Waiting for app on port ${params.previewPort}`);
+  await withDaytonaStep(`wait for app on port ${params.previewPort}`, () =>
+    waitForSandboxHttpReady(params.sandbox as Sandbox, params.previewPort),
+  );
+  await params.onStatus(`Waiting for preview on port ${params.previewPort}`);
+  return withDaytonaStep(`open preview on port ${params.previewPort}`, () =>
+    waitForPreviewUrl(params.sandbox as Sandbox, params.previewPort),
+  );
 }
 
 async function withDaytonaStep<T>(label: string, run: () => Promise<T>): Promise<T> {
@@ -594,9 +836,30 @@ export const DaytonaLive = Layer.effect(
             devCommand: configuredDevCommand,
             previewPort: resolvePreviewPort(project),
           });
+          const sourceStrategy = yield* Effect.try({
+            try: () =>
+              resolveDaytonaSourceStrategy({
+                project,
+                thread,
+                sourceWorkspacePath,
+                gitToken: resolveDaytonaGitToken(),
+              }),
+            catch: (cause) =>
+              new DaytonaError({
+                message: formatDaytonaErrorMessage(
+                  "Failed to determine Daytona source strategy.",
+                  cause,
+                ),
+                cause,
+              }),
+          });
           const previewPort = optimizedLaunch.previewPort;
           const installCommand = optimizedLaunch.installCommand;
-          const devCommand = optimizedLaunch.devCommand;
+          const devCommand = normalizeDaytonaDevCommand({
+            packageJson: sourcePackageJson,
+            devCommand: optimizedLaunch.devCommand,
+            previewPort,
+          });
           const sandboxImage = resolveSandboxImage({
             installCommand,
             devCommand,
@@ -630,66 +893,14 @@ export const DaytonaLive = Layer.effect(
               });
               const activeSandbox = sandbox;
               activeWorkspaceId = activeSandbox.id;
-              await runPromise(updateStartingHost("Preparing Daytona workspace"));
-              await runPromise(updateStartingHost("Scanning local workspace"));
-              const workspaceFiles = await withDaytonaStep("scan local workspace", () =>
-                collectWorkspaceFiles(sourceWorkspacePath),
-              );
-              await runPromise(updateStartingHost("Preparing sandbox workspace"));
-              await withDaytonaStep("prepare sandbox workspace", () =>
-                activeSandbox.process.executeCommand(`mkdir -p ${shellQuote(DAYTONA_REPO_DIR)}`),
-              );
-              for (
-                let index = 0;
-                index < workspaceFiles.length;
-                index += DAYTONA_UPLOAD_BATCH_SIZE
-              ) {
-                const batch = workspaceFiles.slice(index, index + DAYTONA_UPLOAD_BATCH_SIZE);
-                await runPromise(
-                  updateStartingHost(
-                    formatUploadPhase(index + 1, index + batch.length, workspaceFiles.length),
-                  ),
-                );
-                await withDaytonaStep(
-                  formatUploadPhase(index + 1, index + batch.length, workspaceFiles.length),
-                  () => activeSandbox.fs.uploadFiles(batch, DAYTONA_SYNC_TIMEOUT_SECONDS),
-                );
-              }
-              if (installCommand) {
-                await runPromise(updateStartingHost("Installing dependencies"));
-                await withDaytonaStep("install dependencies", () =>
-                  runBlockingPtyCommand({
-                    sandbox: activeSandbox,
-                    label: "install dependencies",
-                    command: installCommand,
-                    cwd: DAYTONA_REPO_DIR,
-                    timeoutSeconds: DAYTONA_INSTALL_TIMEOUT_SECONDS,
-                  }),
-                );
-              }
-              try {
-                await activeSandbox.process.deleteSession(DAYTONA_SESSION_ID);
-              } catch {
-                // Ignore missing sessions.
-              }
-              await runPromise(updateStartingHost("Starting dev server"));
-              await withDaytonaStep("create preview session", () =>
-                activeSandbox.process.createSession(DAYTONA_SESSION_ID),
-              );
-              await withDaytonaStep("start dev command", () =>
-                activeSandbox.process.executeSessionCommand(DAYTONA_SESSION_ID, {
-                  command: `cd ${DAYTONA_REPO_DIR} && ${devCommand}`,
-                  runAsync: true,
-                }),
-              );
-              await runPromise(updateStartingHost(`Waiting for app on port ${previewPort}`));
-              await withDaytonaStep(`wait for app on port ${previewPort}`, () =>
-                waitForSandboxHttpReady(activeSandbox, previewPort),
-              );
-              await runPromise(updateStartingHost(`Waiting for preview on port ${previewPort}`));
-              const previewUrl = await withDaytonaStep(`open preview on port ${previewPort}`, () =>
-                waitForPreviewUrl(activeSandbox, previewPort),
-              );
+              const previewUrl = await launchDaytonaSandboxPreview({
+                sandbox: activeSandbox,
+                sourceStrategy,
+                installCommand,
+                devCommand,
+                previewPort,
+                onStatus: (statusDetail) => runPromise(updateStartingHost(statusDetail)),
+              });
               await runPromise(
                 devHostRegistry.registerHost({
                   threadId: thread.id,

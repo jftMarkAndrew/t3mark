@@ -35,6 +35,24 @@ interface PackageJsonLike {
   readonly devDependencies?: Record<string, string> | null;
 }
 
+function isAngularProject(packageJson: PackageJsonLike | null): boolean {
+  return hasPackage(packageJson, "@angular/core") || hasPackage(packageJson, "@angular/cli");
+}
+
+function detectExplicitScriptPort(packageJson: PackageJsonLike | null): number | null {
+  const packageScripts = packageJson?.scripts ?? null;
+  const combinedScriptText = [packageScripts?.dev, packageScripts?.start].filter(Boolean).join(" ");
+  const explicitPortMatch = /(?:^|\s)(?:--port(?:=|\s+)|-p\s+)(\d{2,5})(?:\s|$)/.exec(
+    combinedScriptText,
+  );
+  if (!explicitPortMatch) {
+    return null;
+  }
+
+  const parsedPort = Number.parseInt(explicitPortMatch[1] ?? "", 10);
+  return Number.isInteger(parsedPort) && parsedPort > 0 ? parsedPort : null;
+}
+
 function normalizeGitRemoteUrl(value: string): string | null {
   const trimmed = value.trim();
   if (trimmed.length === 0) {
@@ -62,6 +80,8 @@ function deriveDaytonaDevCommand(
   packageManager: string | null,
 ) {
   const scripts = packageJson?.scripts ?? null;
+  const angularProject = isAngularProject(packageJson);
+  const angularPort = detectExplicitScriptPort(packageJson) ?? 4200;
   const commandPrefix =
     packageManager === "bun"
       ? "bun run"
@@ -71,17 +91,27 @@ function deriveDaytonaDevCommand(
           ? "yarn"
           : "npm run";
 
-  if (typeof scripts?.["dev:web"] === "string" && scripts["dev:web"].trim().length > 0) {
+  if (
+    !angularProject &&
+    typeof scripts?.["dev:web"] === "string" &&
+    scripts["dev:web"].trim().length > 0
+  ) {
     return `${commandPrefix} dev:web`;
   }
-  if (typeof scripts?.dev === "string" && scripts.dev.trim().length > 0) {
+  if (angularProject && typeof scripts?.start === "string" && scripts.start.trim().length > 0) {
+    if (packageManager === "yarn") {
+      return `yarn start --host 0.0.0.0 --port ${angularPort}`;
+    }
+    return `${commandPrefix} start -- --host 0.0.0.0 --port ${angularPort}`;
+  }
+  if (!angularProject && typeof scripts?.dev === "string" && scripts.dev.trim().length > 0) {
     return `${commandPrefix} dev`;
   }
-  if (typeof scripts?.start === "string" && scripts.start.trim().length > 0) {
+  if (!angularProject && typeof scripts?.start === "string" && scripts.start.trim().length > 0) {
     return packageManager === "yarn" ? "yarn start" : `${commandPrefix} start`;
   }
-  if (hasPackage(packageJson, "@angular/core") || hasPackage(packageJson, "@angular/cli")) {
-    return "ng serve";
+  if (angularProject) {
+    return `ng serve --host 0.0.0.0 --port ${angularPort}`;
   }
   return null;
 }
@@ -102,16 +132,13 @@ function deriveDaytonaAppPort(packageJson: PackageJsonLike | null): number {
   if (packageJson?.name === "@t3tools/monorepo") {
     return 5733;
   }
-  const packageScripts = packageJson?.scripts ?? null;
-  const combinedScriptText = [packageScripts?.dev, packageScripts?.start].filter(Boolean).join(" ");
-  const explicitPortMatch = /(?:^|\s)(?:--port(?:=|\s+)|-p\s+)(\d{2,5})(?:\s|$)/.exec(
-    combinedScriptText,
-  );
-  if (explicitPortMatch) {
-    const parsedPort = Number.parseInt(explicitPortMatch[1] ?? "", 10);
-    if (Number.isInteger(parsedPort) && parsedPort > 0) {
-      return parsedPort;
-    }
+  const explicitPort = detectExplicitScriptPort(packageJson);
+  if (explicitPort !== null) {
+    return explicitPort;
+  }
+
+  if (isAngularProject(packageJson)) {
+    return 4200;
   }
 
   for (const entry of APP_PORT_BY_PACKAGE_NAME) {

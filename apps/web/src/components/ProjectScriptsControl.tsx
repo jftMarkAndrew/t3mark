@@ -451,11 +451,15 @@ export default function ProjectScriptsControl({
       const parsedPreviewPort = Number.parseInt(daytonaPreviewPort, 10);
 
       if (daytonaEnabled && nextRepoUrl.length === 0) {
-        setDaytonaValidationError("Repository URL is required when Daytona is enabled.");
+        setDaytonaValidationError(
+          "Repository URL is required because Daytona clones the repo inside the sandbox.",
+        );
         return;
       }
       if (daytonaEnabled && nextDefaultBranch.length === 0) {
-        setDaytonaValidationError("Default branch is required when Daytona is enabled.");
+        setDaytonaValidationError(
+          "Default branch is required when Daytona is enabled and the thread has no branch.",
+        );
         return;
       }
       if (!Number.isInteger(parsedPreviewPort) || parsedPreviewPort <= 0) {
@@ -654,6 +658,9 @@ export default function ProjectScriptsControl({
                   }
                   onChange={(event) => setDaytonaRepoUrl(event.target.value)}
                 />
+                <p className="text-xs text-muted-foreground">
+                  Daytona clones this repository into the sandbox before starting the preview.
+                </p>
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="daytona-default-branch">Default branch</Label>
@@ -663,6 +670,9 @@ export default function ProjectScriptsControl({
                   placeholder={bootstrapDetectionQuery.data?.detectedDefaultBranch ?? "main"}
                   onChange={(event) => setDaytonaDefaultBranch(event.target.value)}
                 />
+                <p className="text-xs text-muted-foreground">
+                  Used when the active thread does not already have a branch.
+                </p>
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="daytona-install-command">Install command override</Label>
@@ -686,7 +696,8 @@ export default function ProjectScriptsControl({
                   onChange={(event) => setDaytonaDevCommand(event.target.value)}
                 />
                 <p className="text-xs text-muted-foreground">
-                  Runs normally inside Daytona. The app port below is only used to open the preview.
+                  Runs normally inside Daytona. Angular apps should bind to `0.0.0.0` for remote
+                  previews. The app port below is only used to open the preview.
                 </p>
               </div>
               <div className="space-y-1.5">

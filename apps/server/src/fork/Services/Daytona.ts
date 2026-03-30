@@ -9,6 +9,7 @@ import { Effect, Schema, ServiceMap } from "effect";
 export const DAYTONA_DEFAULT_API_URL = "https://app.daytona.io/api";
 export const DAYTONA_DEFAULT_TEST_API_KEY =
   "dtn_a55a00ef1cf5363a313dd973a3241701152f36d831a92a722e348982712bb0d1";
+export const DAYTONA_GITHUB_HOST = "github.com";
 
 function pushUnique(parts: string[], value: string | null | undefined) {
   const normalized = value?.trim();
@@ -144,8 +145,31 @@ export function resolveDaytonaCredentials(): {
   };
 }
 
+export function resolveDaytonaGitToken(): string | null {
+  const token = process.env.DAYTONA_GIT_TOKEN?.trim();
+  return token && token.length > 0 ? token : null;
+}
+
+export function parseGitHubRepoUrl(
+  repoUrl: string,
+): { normalizedUrl: string; host: string } | null {
+  try {
+    const parsed = new URL(repoUrl);
+    if (parsed.protocol !== "https:" || parsed.hostname !== DAYTONA_GITHUB_HOST) {
+      return null;
+    }
+    return {
+      normalizedUrl: parsed.toString(),
+      host: parsed.hostname,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export function resolveDaytonaServerStatus(): DaytonaServerStatus {
   const credentials = resolveDaytonaCredentials();
+  const gitToken = resolveDaytonaGitToken();
 
   return {
     configured: true,
@@ -153,7 +177,11 @@ export function resolveDaytonaServerStatus(): DaytonaServerStatus {
     target: credentials.target,
     message:
       credentials.source === "env"
-        ? "Using DAYTONA_API_KEY from the server environment."
-        : "Using the built-in Daytona test API key. Set DAYTONA_API_KEY to override it.",
+        ? gitToken
+          ? "Daytona API ready. Private GitHub previews are enabled with DAYTONA_GIT_TOKEN."
+          : "Daytona API ready. Set DAYTONA_GIT_TOKEN to enable private GitHub previews."
+        : gitToken
+          ? "Using the built-in Daytona test API key. Private GitHub previews are enabled with DAYTONA_GIT_TOKEN."
+          : "Using the built-in Daytona test API key. Set DAYTONA_API_KEY to override it and DAYTONA_GIT_TOKEN for private GitHub previews.",
   };
 }
