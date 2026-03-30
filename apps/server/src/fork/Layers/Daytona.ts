@@ -6,6 +6,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 
 import { ProjectionSnapshotQuery } from "../../orchestration/Services/ProjectionSnapshotQuery";
+import { CredentialProfilesService } from "../Services/Credentials";
 import { DevHostRegistry } from "../Services/DevHostRegistry";
 import {
   DAYTONA_DEFAULT_API_URL,
@@ -15,8 +16,6 @@ import {
   formatDaytonaErrorMessage,
   parseGitHubRepoUrl,
   resolveDaytonaCredentials,
-  resolveDaytonaGitToken,
-  resolveDaytonaServerStatus,
   type DaytonaShape,
 } from "../Services/Daytona";
 
@@ -742,21 +741,18 @@ async function withDaytonaStep<T>(label: string, run: () => Promise<T>): Promise
 export const DaytonaLive = Layer.effect(
   DaytonaService,
   Effect.gen(function* () {
-    const status = resolveDaytonaServerStatus();
     const projectionSnapshotQuery = yield* ProjectionSnapshotQuery;
+    const credentialProfilesService = yield* CredentialProfilesService;
     const devHostRegistry = yield* DevHostRegistry;
     const services = yield* Effect.services<never>();
     const runPromise = Effect.runPromiseWith(services);
 
-    const makeClient = () =>
+    const makeClient = (apiKey: string) =>
       Effect.try({
         try: () => {
           const credentials = resolveDaytonaCredentials();
-          if (!status.configured) {
-            throw new Error(status.message ?? "Daytona is not configured.");
-          }
           return new Daytona({
-            apiKey: credentials.apiKey,
+            apiKey,
             apiUrl: credentials.apiUrl || DAYTONA_DEFAULT_API_URL,
             ...(credentials.target ? { target: credentials.target } : {}),
           });
@@ -836,13 +832,47 @@ export const DaytonaLive = Layer.effect(
             devCommand: configuredDevCommand,
             previewPort: resolvePreviewPort(project),
           });
+          const resolvedDaytonaSecret = yield* credentialProfilesService
+            .resolveSecret({
+              kind: "daytona",
+              profileId: project.daytona?.daytonaCredentialProfileId ?? null,
+            })
+            .pipe(
+              Effect.mapError(
+                (cause) =>
+                  new DaytonaError({
+                    message: formatDaytonaErrorMessage(
+                      "Failed to resolve Daytona API credentials.",
+                      cause,
+                    ),
+                    cause,
+                  }),
+              ),
+            );
+          const resolvedGitSecret = yield* credentialProfilesService
+            .resolveSecret({
+              kind: "github",
+              profileId: project.daytona?.gitCredentialProfileId ?? null,
+            })
+            .pipe(
+              Effect.mapError(
+                (cause) =>
+                  new DaytonaError({
+                    message: formatDaytonaErrorMessage(
+                      "Failed to resolve Git credentials for Daytona.",
+                      cause,
+                    ),
+                    cause,
+                  }),
+              ),
+            );
           const sourceStrategy = yield* Effect.try({
             try: () =>
               resolveDaytonaSourceStrategy({
                 project,
                 thread,
                 sourceWorkspacePath,
-                gitToken: resolveDaytonaGitToken(),
+                gitToken: resolvedGitSecret.secret,
               }),
             catch: (cause) =>
               new DaytonaError({
@@ -864,7 +894,9 @@ export const DaytonaLive = Layer.effect(
             installCommand,
             devCommand,
           });
-          const client = yield* makeClient();
+          const client = yield* makeClient(
+            resolvedDaytonaSecret.secret ?? resolveDaytonaCredentials().apiKey,
+          );
 
           void (async () => {
             let activeWorkspaceId = provisionalWorkspaceId;
@@ -987,7 +1019,38 @@ export const DaytonaLive = Layer.effect(
             yield* devHostRegistry.unregisterHost(input.hostId);
             return;
           }
-          const client = yield* makeClient();
+          const snapshot = yield* projectionSnapshotQuery.getSnapshot();
+          const { project } = yield* Effect.try({
+            try: () => resolveThreadContext(snapshot, host.threadId),
+            catch: (cause) =>
+              new DaytonaError({
+                message: formatDaytonaErrorMessage(
+                  "Failed to resolve Daytona preview thread during stop.",
+                  cause,
+                ),
+                cause,
+              }),
+          });
+          const resolvedDaytonaSecret = yield* credentialProfilesService
+            .resolveSecret({
+              kind: "daytona",
+              profileId: project.daytona?.daytonaCredentialProfileId ?? null,
+            })
+            .pipe(
+              Effect.mapError(
+                (cause) =>
+                  new DaytonaError({
+                    message: formatDaytonaErrorMessage(
+                      "Failed to resolve Daytona API credentials.",
+                      cause,
+                    ),
+                    cause,
+                  }),
+              ),
+            );
+          const client = yield* makeClient(
+            resolvedDaytonaSecret.secret ?? resolveDaytonaCredentials().apiKey,
+          );
           yield* Effect.tryPromise({
             try: async () => {
               const sandbox = await client.get(host.workspaceId!);

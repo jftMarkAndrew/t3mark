@@ -30,4 +30,39 @@ describe("Daytona service helpers", () => {
     expect(status.configured).toBe(true);
     expect(status.message).toContain("DAYTONA_GIT_TOKEN");
   });
+
+  it("prefers app-managed credential status when both profiles are configured", () => {
+    const status = resolveDaytonaServerStatus({
+      profiles: [
+        {
+          id: "daytona-default",
+          kind: "daytona",
+          name: "Daytona",
+          description: null,
+          isDefault: true,
+          hasSecret: true,
+          lastValidatedAt: null,
+          validationStatus: "unknown",
+          validationMessage: null,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        },
+        {
+          id: "github-default",
+          kind: "github",
+          name: "GitHub",
+          description: null,
+          isDefault: true,
+          hasSecret: true,
+          lastValidatedAt: null,
+          validationStatus: "unknown",
+          validationMessage: null,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+    });
+
+    expect(status.message).toContain("App-managed Daytona and GitHub credentials");
+  });
 });

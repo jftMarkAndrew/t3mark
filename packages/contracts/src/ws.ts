@@ -18,6 +18,11 @@ import {
   DevHostStopInput,
 } from "./devHost";
 import {
+  CredentialProfileDeleteInput,
+  CredentialProfileUpsertInput,
+  CredentialProfileValidateInput,
+} from "./credentials";
+import {
   GitActionProgressEvent,
   GitCheckoutInput,
   GitCreateBranchInput,
@@ -102,6 +107,9 @@ export const WS_METHODS = {
   serverUpsertKeybinding: "server.upsertKeybinding",
   serverGetSettings: "server.getSettings",
   serverUpdateSettings: "server.updateSettings",
+  serverSaveCredentialProfile: "server.saveCredentialProfile",
+  serverDeleteCredentialProfile: "server.deleteCredentialProfile",
+  serverValidateCredentialProfile: "server.validateCredentialProfile",
   serverGetJiraIssue: "server.getJiraIssue",
 } as const;
 
@@ -181,6 +189,9 @@ const WebSocketRequestBody = Schema.Union([
   tagRequestBody(WS_METHODS.serverUpsertKeybinding, KeybindingRule),
   tagRequestBody(WS_METHODS.serverGetSettings, Schema.Struct({})),
   tagRequestBody(WS_METHODS.serverUpdateSettings, Schema.Struct({ patch: ServerSettingsPatch })),
+  tagRequestBody(WS_METHODS.serverSaveCredentialProfile, CredentialProfileUpsertInput),
+  tagRequestBody(WS_METHODS.serverDeleteCredentialProfile, CredentialProfileDeleteInput),
+  tagRequestBody(WS_METHODS.serverValidateCredentialProfile, CredentialProfileValidateInput),
   tagRequestBody(WS_METHODS.serverGetJiraIssue, JiraIssueLookupInput),
 ]);
 

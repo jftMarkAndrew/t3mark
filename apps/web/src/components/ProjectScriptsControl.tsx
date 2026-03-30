@@ -1,5 +1,6 @@
 import type {
   BootstrapPackageManager,
+  CredentialProfile,
   ProjectBootstrapConfig,
   ProjectDaytonaConfig,
   ProjectScript,
@@ -21,11 +22,13 @@ import {
 } from "lucide-react";
 import React, { type FormEvent, type KeyboardEvent, useCallback, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useNavigate } from "@tanstack/react-router";
 
 import {
   keybindingValueForCommand,
   decodeProjectScriptKeybindingRule,
 } from "~/lib/projectScriptKeybindings";
+import { serverConfigQueryOptions } from "~/lib/serverReactQuery";
 import { projectDetectBootstrapQueryOptions } from "~/lib/projectReactQuery";
 import {
   commandForProjectScript,
@@ -60,6 +63,8 @@ import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Menu, MenuItem, MenuPopup, MenuShortcut, MenuTrigger } from "./ui/menu";
 import { Popover, PopoverPopup, PopoverTrigger } from "./ui/popover";
+import { RadioGroup, RadioGroupItem } from "./ui/radio-group";
+import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "./ui/select";
 import { Switch } from "./ui/switch";
 import { Textarea } from "./ui/textarea";
 
@@ -111,6 +116,8 @@ export interface NewProjectDaytonaInput {
   installCommand: string | null;
   devCommand: string | null;
   previewPort: number | null;
+  daytonaCredentialProfileId: string | null;
+  gitCredentialProfileId: string | null;
 }
 
 interface ProjectScriptsControlProps {
@@ -223,8 +230,16 @@ export default function ProjectScriptsControl({
   const [daytonaInstallCommand, setDaytonaInstallCommand] = useState("");
   const [daytonaDevCommand, setDaytonaDevCommand] = useState("");
   const [daytonaPreviewPort, setDaytonaPreviewPort] = useState(String(DEFAULT_LOCALHOST_BASE_PORT));
+  const [daytonaCredentialMode, setDaytonaCredentialMode] = useState<"default" | "profile">(
+    "default",
+  );
+  const [daytonaCredentialProfileId, setDaytonaCredentialProfileId] = useState("__default__");
+  const [gitCredentialMode, setGitCredentialMode] = useState<"default" | "profile">("default");
+  const [gitCredentialProfileId, setGitCredentialProfileId] = useState("__default__");
   const [daytonaValidationError, setDaytonaValidationError] = useState<string | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const navigate = useNavigate();
+  const serverConfigQuery = useQuery(serverConfigQueryOptions());
   const bootstrapDetectionQuery = useQuery(
     projectDetectBootstrapQueryOptions({
       cwd: projectCwd,
@@ -437,6 +452,10 @@ export default function ProjectScriptsControl({
     setDaytonaPreviewPort(
       String(daytona?.previewPort ?? detected?.detectedAppPort ?? DEFAULT_LOCALHOST_BASE_PORT),
     );
+    setDaytonaCredentialMode(daytona?.daytonaCredentialProfileId ? "profile" : "default");
+    setDaytonaCredentialProfileId(daytona?.daytonaCredentialProfileId ?? "__default__");
+    setGitCredentialMode(daytona?.gitCredentialProfileId ? "profile" : "default");
+    setGitCredentialProfileId(daytona?.gitCredentialProfileId ?? "__default__");
     setDaytonaValidationError(null);
     setDaytonaDialogOpen(true);
   }, [bootstrapDetectionQuery.data, daytona]);
@@ -475,18 +494,38 @@ export default function ProjectScriptsControl({
         installCommand: nextInstallCommand.length > 0 ? nextInstallCommand : null,
         devCommand: nextDevCommand.length > 0 ? nextDevCommand : null,
         previewPort: parsedPreviewPort,
+        daytonaCredentialProfileId:
+          daytonaCredentialMode === "profile" && daytonaCredentialProfileId !== "__default__"
+            ? daytonaCredentialProfileId
+            : null,
+        gitCredentialProfileId:
+          gitCredentialMode === "profile" && gitCredentialProfileId !== "__default__"
+            ? gitCredentialProfileId
+            : null,
       });
       setDaytonaDialogOpen(false);
     },
     [
+      daytonaCredentialMode,
       daytonaDefaultBranch,
+      daytonaCredentialProfileId,
       daytonaDevCommand,
       daytonaEnabled,
+      gitCredentialMode,
+      gitCredentialProfileId,
       daytonaInstallCommand,
       daytonaPreviewPort,
       daytonaRepoUrl,
       onSaveDaytona,
     ],
+  );
+
+  const credentialProfiles = serverConfigQuery.data?.credentials?.profiles ?? [];
+  const daytonaProfiles = credentialProfiles.filter(
+    (profile): profile is CredentialProfile => profile.kind === "daytona",
+  );
+  const githubProfiles = credentialProfiles.filter(
+    (profile): profile is CredentialProfile => profile.kind === "github",
   );
 
   return (
@@ -713,6 +752,139 @@ export default function ProjectScriptsControl({
                 />
                 <p className="text-xs text-muted-foreground">
                   Daytona uses this port to generate the preview URL after your app starts.
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="daytona-credential-profile">Daytona credentials</Label>
+                <RadioGroup
+                  value={daytonaCredentialMode}
+                  onValueChange={(value) =>
+                    setDaytonaCredentialMode(value === "profile" ? "profile" : "default")
+                  }
+                  className="gap-2"
+                >
+                  <label className="flex items-center gap-2 rounded-md border border-border/70 px-3 py-2 text-sm">
+                    <RadioGroupItem value="default" />
+                    <span>Use default Daytona credentials or `.env`</span>
+                  </label>
+                  <label className="flex items-center gap-2 rounded-md border border-border/70 px-3 py-2 text-sm">
+                    <RadioGroupItem value="profile" />
+                    <span>Use project-specific Daytona credentials</span>
+                  </label>
+                </RadioGroup>
+                {daytonaCredentialMode === "profile" ? (
+                  daytonaProfiles.length > 0 ? (
+                    <Select
+                      value={
+                        daytonaCredentialProfileId === "__default__"
+                          ? (daytonaProfiles[0]?.id ?? null)
+                          : daytonaCredentialProfileId
+                      }
+                      onValueChange={(value) =>
+                        setDaytonaCredentialProfileId(
+                          value ?? daytonaProfiles[0]?.id ?? "__default__",
+                        )
+                      }
+                    >
+                      <SelectTrigger id="daytona-credential-profile" className="w-full">
+                        <SelectValue>
+                          {daytonaProfiles.find(
+                            (profile) => profile.id === daytonaCredentialProfileId,
+                          )?.name ?? "Select Daytona credentials"}
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectPopup>
+                        {daytonaProfiles.map((profile) => (
+                          <SelectItem key={profile.id} value={profile.id}>
+                            {profile.name}
+                            {profile.isDefault ? " (default)" : ""}
+                          </SelectItem>
+                        ))}
+                      </SelectPopup>
+                    </Select>
+                  ) : (
+                    <div className="rounded-md border border-dashed border-border/70 px-3 py-2 text-xs text-muted-foreground">
+                      No saved Daytona profiles yet.
+                      <Button
+                        type="button"
+                        size="xs"
+                        variant="ghost"
+                        className="ml-2 h-auto px-1 py-0"
+                        onClick={() => void navigate({ to: "/settings" })}
+                      >
+                        Open Settings
+                      </Button>
+                    </div>
+                  )
+                ) : null}
+                <p className="text-xs text-muted-foreground">
+                  This is the explicit folder-level override. Keep the default path, or select a
+                  saved Daytona profile just for this project.
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="git-credential-profile">Git credentials</Label>
+                <RadioGroup
+                  value={gitCredentialMode}
+                  onValueChange={(value) =>
+                    setGitCredentialMode(value === "profile" ? "profile" : "default")
+                  }
+                  className="gap-2"
+                >
+                  <label className="flex items-center gap-2 rounded-md border border-border/70 px-3 py-2 text-sm">
+                    <RadioGroupItem value="default" />
+                    <span>Use default GitHub credentials or `.env`</span>
+                  </label>
+                  <label className="flex items-center gap-2 rounded-md border border-border/70 px-3 py-2 text-sm">
+                    <RadioGroupItem value="profile" />
+                    <span>Use project-specific GitHub credentials</span>
+                  </label>
+                </RadioGroup>
+                {gitCredentialMode === "profile" ? (
+                  githubProfiles.length > 0 ? (
+                    <Select
+                      value={
+                        gitCredentialProfileId === "__default__"
+                          ? (githubProfiles[0]?.id ?? null)
+                          : gitCredentialProfileId
+                      }
+                      onValueChange={(value) =>
+                        setGitCredentialProfileId(value ?? githubProfiles[0]?.id ?? "__default__")
+                      }
+                    >
+                      <SelectTrigger id="git-credential-profile" className="w-full">
+                        <SelectValue>
+                          {githubProfiles.find((profile) => profile.id === gitCredentialProfileId)
+                            ?.name ?? "Select GitHub credentials"}
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectPopup>
+                        {githubProfiles.map((profile) => (
+                          <SelectItem key={profile.id} value={profile.id}>
+                            {profile.name}
+                            {profile.isDefault ? " (default)" : ""}
+                          </SelectItem>
+                        ))}
+                      </SelectPopup>
+                    </Select>
+                  ) : (
+                    <div className="rounded-md border border-dashed border-border/70 px-3 py-2 text-xs text-muted-foreground">
+                      No saved GitHub profiles yet.
+                      <Button
+                        type="button"
+                        size="xs"
+                        variant="ghost"
+                        className="ml-2 h-auto px-1 py-0"
+                        onClick={() => void navigate({ to: "/settings" })}
+                      >
+                        Open Settings
+                      </Button>
+                    </div>
+                  )
+                ) : null}
+                <p className="text-xs text-muted-foreground">
+                  Used for cloning private GitHub repositories inside Daytona. Keep the default
+                  GitHub credentials, or override them for this folder only.
                 </p>
               </div>
               {daytonaValidationError ? (

@@ -1,5 +1,6 @@
 import type {
   ActiveDevHost,
+  CredentialProfilesState,
   DaytonaLaunchInput,
   DaytonaServerStatus,
   DaytonaStopInput,
@@ -167,21 +168,34 @@ export function parseGitHubRepoUrl(
   }
 }
 
-export function resolveDaytonaServerStatus(): DaytonaServerStatus {
+export function resolveDaytonaServerStatus(
+  credentialsState?: typeof CredentialProfilesState.Type | null,
+): DaytonaServerStatus {
   const credentials = resolveDaytonaCredentials();
   const gitToken = resolveDaytonaGitToken();
+  const profiles = credentialsState?.profiles ?? [];
+  const hasDaytonaProfile = profiles.some(
+    (profile) => profile.kind === "daytona" && profile.hasSecret,
+  );
+  const hasGitHubProfile = profiles.some(
+    (profile) => profile.kind === "github" && profile.hasSecret,
+  );
 
   return {
     configured: true,
     apiUrl: credentials.apiUrl,
     target: credentials.target,
     message:
-      credentials.source === "env"
-        ? gitToken
-          ? "Daytona API ready. Private GitHub previews are enabled with DAYTONA_GIT_TOKEN."
-          : "Daytona API ready. Set DAYTONA_GIT_TOKEN to enable private GitHub previews."
-        : gitToken
-          ? "Using the built-in Daytona test API key. Private GitHub previews are enabled with DAYTONA_GIT_TOKEN."
-          : "Using the built-in Daytona test API key. Set DAYTONA_API_KEY to override it and DAYTONA_GIT_TOKEN for private GitHub previews.",
+      hasDaytonaProfile && hasGitHubProfile
+        ? "App-managed Daytona and GitHub credentials are configured."
+        : hasDaytonaProfile
+          ? "App-managed Daytona credentials are configured. Add a GitHub credential for private repository previews."
+          : credentials.source === "env"
+            ? gitToken
+              ? "Daytona API ready. Private GitHub previews are enabled with DAYTONA_GIT_TOKEN."
+              : "Daytona API ready. Set DAYTONA_GIT_TOKEN to enable private GitHub previews."
+            : gitToken
+              ? "Using the built-in Daytona test API key. Private GitHub previews are enabled with DAYTONA_GIT_TOKEN."
+              : "Using the built-in Daytona test API key. Set DAYTONA_API_KEY to override it and DAYTONA_GIT_TOKEN for private GitHub previews.",
   };
 }

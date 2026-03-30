@@ -226,6 +226,12 @@ export function createWsNativeApi(): NativeApi {
       upsertKeybinding: (input) => transport.request(WS_METHODS.serverUpsertKeybinding, input),
       getSettings: () => transport.request(WS_METHODS.serverGetSettings),
       updateSettings: (patch) => transport.request(WS_METHODS.serverUpdateSettings, { patch }),
+      saveCredentialProfile: (input) =>
+        transport.request(WS_METHODS.serverSaveCredentialProfile, input),
+      deleteCredentialProfile: (input) =>
+        transport.request(WS_METHODS.serverDeleteCredentialProfile, input),
+      validateCredentialProfile: (input) =>
+        transport.request(WS_METHODS.serverValidateCredentialProfile, input),
       getJiraIssue: (input) => transport.request(WS_METHODS.serverGetJiraIssue, input),
     },
     orchestration: {

@@ -12,6 +12,8 @@ import {
 } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import {
+  type CredentialProfile,
+  type CredentialProviderKind,
   PROVIDER_DISPLAY_NAMES,
   type ProviderKind,
   type ServerProvider,
@@ -76,6 +78,10 @@ const TIMESTAMP_FORMAT_LABELS = {
 } as const;
 
 const EMPTY_SERVER_PROVIDERS: ReadonlyArray<ServerProvider> = [];
+const CREDENTIAL_KIND_LABELS: Record<CredentialProviderKind, string> = {
+  daytona: "Daytona",
+  github: "GitHub",
+};
 
 type InstallProviderSettings = {
   provider: ProviderKind;
@@ -312,6 +318,24 @@ function SettingsRouteView() {
     Partial<Record<ProviderKind, string | null>>
   >({});
   const [isRefreshingProviders, setIsRefreshingProviders] = useState(false);
+  const [credentialForm, setCredentialForm] = useState<{
+    id: string | null;
+    kind: CredentialProviderKind;
+    name: string;
+    description: string;
+    secret: string;
+    isDefault: boolean;
+  }>({
+    id: null,
+    kind: "daytona",
+    name: "",
+    description: "",
+    secret: "",
+    isDefault: false,
+  });
+  const [credentialError, setCredentialError] = useState<string | null>(null);
+  const [isSavingCredential, setIsSavingCredential] = useState(false);
+  const [pendingCredentialId, setPendingCredentialId] = useState<string | null>(null);
   const refreshingRef = useRef(false);
   const queryClient = useQueryClient();
   useRelativeTimeTick();
@@ -339,6 +363,11 @@ function SettingsRouteView() {
   const keybindingsConfigPath = serverConfigQuery.data?.keybindingsConfigPath ?? null;
   const availableEditors = serverConfigQuery.data?.availableEditors;
   const serverProviders = serverConfigQuery.data?.providers ?? EMPTY_SERVER_PROVIDERS;
+  const credentialProfiles = serverConfigQuery.data?.credentials?.profiles ?? [];
+  const defaultDaytonaCredentialProfile =
+    credentialProfiles.find((profile) => profile.kind === "daytona" && profile.isDefault) ?? null;
+  const defaultGitHubCredentialProfile =
+    credentialProfiles.find((profile) => profile.kind === "github" && profile.isDefault) ?? null;
 
   const textGenerationModelSelection = resolveAppModelSelectionState(settings, serverProviders);
   const textGenProvider = textGenerationModelSelection.provider;
@@ -379,6 +408,124 @@ function SettingsRouteView() {
     ...(isGitWritingModelDirty ? ["Git writing model"] : []),
     ...(areProviderSettingsDirty ? ["Providers"] : []),
   ];
+
+  const resetCredentialForm = useCallback(() => {
+    setCredentialForm({
+      id: null,
+      kind: "daytona",
+      name: "",
+      description: "",
+      secret: "",
+      isDefault: false,
+    });
+    setCredentialError(null);
+  }, []);
+
+  const saveCredentialProfile = useCallback(async () => {
+    const api = ensureNativeApi();
+    if (credentialForm.name.trim().length === 0) {
+      setCredentialError("Credential profile name is required.");
+      return;
+    }
+    if (credentialForm.id === null && credentialForm.secret.trim().length === 0) {
+      setCredentialError("Paste a secret before saving a new credential profile.");
+      return;
+    }
+    setCredentialError(null);
+    setIsSavingCredential(true);
+    const shouldValidateAfterSave = credentialForm.secret.trim().length > 0;
+    try {
+      const savedProfile = await api.server.saveCredentialProfile({
+        id: credentialForm.id,
+        kind: credentialForm.kind,
+        name: credentialForm.name.trim(),
+        description:
+          credentialForm.description.trim().length > 0 ? credentialForm.description.trim() : null,
+        isDefault: credentialForm.isDefault,
+        secret: credentialForm.secret.trim().length > 0 ? credentialForm.secret.trim() : null,
+        validate: false,
+      });
+      await queryClient.invalidateQueries({ queryKey: serverQueryKeys.config() });
+      resetCredentialForm();
+      if (shouldValidateAfterSave) {
+        void api.server
+          .validateCredentialProfile({ profileId: savedProfile.id })
+          .then(() => queryClient.invalidateQueries({ queryKey: serverQueryKeys.config() }))
+          .catch(() => undefined);
+      }
+    } catch (error) {
+      setCredentialError(
+        error instanceof Error ? error.message : "Failed to save credential profile.",
+      );
+    } finally {
+      setIsSavingCredential(false);
+    }
+  }, [credentialForm, queryClient, resetCredentialForm]);
+
+  const startEditingCredential = useCallback((profile: CredentialProfile) => {
+    setCredentialForm({
+      id: profile.id,
+      kind: profile.kind,
+      name: profile.name,
+      description: profile.description ?? "",
+      secret: "",
+      isDefault: profile.isDefault ?? false,
+    });
+    setCredentialError(null);
+  }, []);
+
+  const deleteCredentialProfile = useCallback(
+    async (profileId: string) => {
+      const api = ensureNativeApi();
+      setPendingCredentialId(profileId);
+      try {
+        await api.server.deleteCredentialProfile({ profileId });
+        await queryClient.invalidateQueries({ queryKey: serverQueryKeys.config() });
+        if (credentialForm.id === profileId) {
+          resetCredentialForm();
+        }
+      } finally {
+        setPendingCredentialId(null);
+      }
+    },
+    [credentialForm.id, queryClient, resetCredentialForm],
+  );
+
+  const validateCredentialProfile = useCallback(
+    async (profileId: string) => {
+      const api = ensureNativeApi();
+      setPendingCredentialId(profileId);
+      try {
+        await api.server.validateCredentialProfile({ profileId });
+        await queryClient.invalidateQueries({ queryKey: serverQueryKeys.config() });
+      } finally {
+        setPendingCredentialId(null);
+      }
+    },
+    [queryClient],
+  );
+
+  const makeCredentialProfileDefault = useCallback(
+    async (profile: CredentialProfile) => {
+      const api = ensureNativeApi();
+      setPendingCredentialId(profile.id);
+      try {
+        await api.server.saveCredentialProfile({
+          id: profile.id,
+          kind: profile.kind,
+          name: profile.name,
+          description: profile.description ?? null,
+          isDefault: true,
+          secret: null,
+          validate: false,
+        });
+        await queryClient.invalidateQueries({ queryKey: serverQueryKeys.config() });
+      } finally {
+        setPendingCredentialId(null);
+      }
+    },
+    [queryClient],
+  );
 
   const openKeybindingsFile = useCallback(() => {
     if (!keybindingsConfigPath) return;
@@ -1263,6 +1410,219 @@ function SettingsRouteView() {
                   </div>
                 );
               })}
+            </SettingsSection>
+
+            <SettingsSection title="Credentials">
+              <SettingsRow
+                title="Stored credentials"
+                description="Paste Daytona and GitHub tokens here if you want app-managed defaults and per-project overrides. If you do not want to trust the app with secrets, you can keep using `.env` with `DAYTONA_API_KEY` and `DAYTONA_GIT_TOKEN` instead."
+                status="You can keep one default Daytona profile and one default GitHub profile, then override either of them on specific projects."
+              >
+                <div className="mt-3 space-y-3">
+                  <div className="rounded-xl border border-border/70 bg-muted/20 px-3 py-3 text-xs text-muted-foreground">
+                    <p>
+                      Fallback order: project-specific credential → default credential for that kind{" "}
+                      → matching `.env` variable.
+                    </p>
+                    <p className="mt-1">
+                      Current defaults: Daytona = {defaultDaytonaCredentialProfile?.name ?? "none"}
+                      {"; "}
+                      GitHub = {defaultGitHubCredentialProfile?.name ?? "none"}.
+                    </p>
+                  </div>
+                  {credentialProfiles.length === 0 ? (
+                    <div className="rounded-xl border border-dashed border-border/70 px-3 py-3 text-xs text-muted-foreground">
+                      No credential profiles saved yet. You can rely on `.env` only, or create saved
+                      defaults and optional project-specific overrides here.
+                    </div>
+                  ) : (
+                    credentialProfiles.map((profile) => (
+                      <div
+                        key={profile.id}
+                        className="rounded-xl border border-border/70 px-3 py-3 text-xs"
+                      >
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-medium text-foreground">{profile.name}</span>
+                          <span className="text-muted-foreground">
+                            {CREDENTIAL_KIND_LABELS[profile.kind]}
+                          </span>
+                          {profile.isDefault ? (
+                            <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] text-foreground">
+                              default
+                            </span>
+                          ) : null}
+                          <span className="text-muted-foreground">
+                            {profile.hasSecret ? "secret stored" : "missing secret"}
+                          </span>
+                        </div>
+                        {profile.description ? (
+                          <p className="mt-1 text-muted-foreground">{profile.description}</p>
+                        ) : null}
+                        <p className="mt-1 text-muted-foreground">
+                          Validation: {profile.validationStatus}
+                          {profile.validationMessage ? ` — ${profile.validationMessage}` : ""}
+                        </p>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          <Button
+                            size="xs"
+                            variant="outline"
+                            onClick={() => startEditingCredential(profile)}
+                          >
+                            Edit
+                          </Button>
+                          {!profile.isDefault ? (
+                            <Button
+                              size="xs"
+                              variant="outline"
+                              disabled={pendingCredentialId === profile.id}
+                              onClick={() => void makeCredentialProfileDefault(profile)}
+                            >
+                              Set default
+                            </Button>
+                          ) : null}
+                          <Button
+                            size="xs"
+                            variant="outline"
+                            disabled={pendingCredentialId === profile.id}
+                            onClick={() => void validateCredentialProfile(profile.id)}
+                          >
+                            Validate
+                          </Button>
+                          <Button
+                            size="xs"
+                            variant="outline"
+                            disabled={pendingCredentialId === profile.id}
+                            onClick={() => void deleteCredentialProfile(profile.id)}
+                          >
+                            Delete
+                          </Button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+
+                  <div className="rounded-xl border border-border/70 px-3 py-3">
+                    <div className="mb-3 flex items-center justify-between">
+                      <div className="text-xs font-medium text-foreground">
+                        {credentialForm.id ? "Edit credential profile" : "New credential profile"}
+                      </div>
+                      {credentialForm.id ? (
+                        <Button size="xs" variant="ghost" onClick={resetCredentialForm}>
+                          Cancel
+                        </Button>
+                      ) : null}
+                    </div>
+                    <div className="space-y-3">
+                      <div className="space-y-1.5">
+                        <span className="text-xs font-medium text-foreground">Kind</span>
+                        <Select
+                          value={credentialForm.kind}
+                          onValueChange={(value) =>
+                            setCredentialForm((current) => ({
+                              ...current,
+                              kind: value as CredentialProviderKind,
+                            }))
+                          }
+                        >
+                          <SelectTrigger className="w-full" disabled={credentialForm.id !== null}>
+                            <SelectValue>{CREDENTIAL_KIND_LABELS[credentialForm.kind]}</SelectValue>
+                          </SelectTrigger>
+                          <SelectPopup>
+                            <SelectItem value="daytona">Daytona</SelectItem>
+                            <SelectItem value="github">GitHub</SelectItem>
+                          </SelectPopup>
+                        </Select>
+                      </div>
+                      <label className="block">
+                        <span className="text-xs font-medium text-foreground">Profile name</span>
+                        <Input
+                          className="mt-1.5"
+                          value={credentialForm.name}
+                          onChange={(event) =>
+                            setCredentialForm((current) => ({
+                              ...current,
+                              name: event.target.value,
+                            }))
+                          }
+                          placeholder={
+                            credentialForm.kind === "daytona" ? "Default Daytona" : "Work GitHub"
+                          }
+                        />
+                      </label>
+                      <label className="block">
+                        <span className="text-xs font-medium text-foreground">Description</span>
+                        <Input
+                          className="mt-1.5"
+                          value={credentialForm.description}
+                          onChange={(event) =>
+                            setCredentialForm((current) => ({
+                              ...current,
+                              description: event.target.value,
+                            }))
+                          }
+                          placeholder="Optional note"
+                        />
+                      </label>
+                      <label className="block">
+                        <span className="text-xs font-medium text-foreground">
+                          {credentialForm.id ? "Replace secret" : "Secret"}
+                        </span>
+                        <Input
+                          className="mt-1.5"
+                          type="password"
+                          value={credentialForm.secret}
+                          onChange={(event) =>
+                            setCredentialForm((current) => ({
+                              ...current,
+                              secret: event.target.value,
+                            }))
+                          }
+                          placeholder={
+                            credentialForm.id
+                              ? "Leave blank to keep the stored secret"
+                              : credentialForm.kind === "daytona"
+                                ? "Paste Daytona API key"
+                                : "Paste GitHub token"
+                          }
+                          spellCheck={false}
+                        />
+                      </label>
+                      <label className="flex items-center justify-between gap-3 rounded-md border border-border/70 px-3 py-2 text-sm">
+                        <span>Set as default for this kind</span>
+                        <Switch
+                          checked={credentialForm.isDefault}
+                          onCheckedChange={(checked) =>
+                            setCredentialForm((current) => ({
+                              ...current,
+                              isDefault: Boolean(checked),
+                            }))
+                          }
+                        />
+                      </label>
+                      <p className="text-xs text-muted-foreground">
+                        Defaults apply to every project that leaves that credential selector empty.
+                        You can still choose a different Daytona or GitHub profile on a specific
+                        folder later.
+                      </p>
+                      {credentialError ? (
+                        <p className="text-xs text-destructive">{credentialError}</p>
+                      ) : null}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={isSavingCredential}
+                        onClick={() => void saveCredentialProfile()}
+                      >
+                        {isSavingCredential
+                          ? "Saving..."
+                          : credentialForm.id
+                            ? "Save changes"
+                            : "Create profile"}
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </SettingsRow>
             </SettingsSection>
 
             <SettingsSection title="Advanced">

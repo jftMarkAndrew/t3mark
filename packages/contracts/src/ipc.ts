@@ -24,6 +24,12 @@ import type {
   GitStatusResult,
 } from "./git";
 import type {
+  CredentialProfile,
+  CredentialProfileDeleteInput,
+  CredentialProfileUpsertInput,
+  CredentialProfileValidateInput,
+} from "./credentials";
+import type {
   DaytonaLaunchInput,
   DaytonaStopInput,
   DevHostListResult,
@@ -198,6 +204,11 @@ export interface NativeApi {
     upsertKeybinding: (input: ServerUpsertKeybindingInput) => Promise<ServerUpsertKeybindingResult>;
     getSettings: () => Promise<ServerSettings>;
     updateSettings: (patch: ServerSettingsPatch) => Promise<ServerSettings>;
+    saveCredentialProfile: (input: CredentialProfileUpsertInput) => Promise<CredentialProfile>;
+    deleteCredentialProfile: (input: CredentialProfileDeleteInput) => Promise<void>;
+    validateCredentialProfile: (
+      input: CredentialProfileValidateInput,
+    ) => Promise<CredentialProfile>;
     getJiraIssue: (input: JiraIssueLookupInput) => Promise<JiraIssueLookupResult>;
   };
   orchestration: {

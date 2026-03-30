@@ -33,6 +33,7 @@ import { GitCoreLive } from "./git/Layers/GitCore";
 import { GitHubCliLive } from "./git/Layers/GitHubCli";
 import { RoutingTextGenerationLive } from "./git/Layers/RoutingTextGeneration";
 import { DevHostRegistryLive } from "./fork/Layers/DevHostRegistry";
+import { CredentialProfilesLive } from "./fork/Layers/Credentials";
 import { DaytonaLive } from "./fork/Layers/Daytona";
 import { JiraLive } from "./fork/Layers/Jira";
 import { PtyAdapter } from "./terminal/Services/PTY";
@@ -133,7 +134,9 @@ export function makeServerRuntimeServicesLayer() {
 
   const terminalLayer = TerminalManagerLive.pipe(Layer.provide(makeRuntimePtyAdapterLayer()));
   const devHostRegistryLayer = DevHostRegistryLive.pipe(Layer.provide(terminalLayer));
+  const credentialProfilesLayer = CredentialProfilesLive;
   const daytonaLayer = DaytonaLive.pipe(
+    Layer.provideMerge(credentialProfilesLayer),
     Layer.provideMerge(OrchestrationProjectionSnapshotQueryLive),
     Layer.provideMerge(devHostRegistryLayer),
   );
@@ -150,6 +153,7 @@ export function makeServerRuntimeServicesLayer() {
     gitManagerLayer,
     terminalLayer,
     devHostRegistryLayer,
+    credentialProfilesLayer,
     daytonaLayer,
     JiraLive,
     KeybindingsLive,

@@ -2180,6 +2180,8 @@ export default function ChatView({ threadId }: ChatViewProps) {
           installCommand: input.installCommand,
           devCommand: input.devCommand,
           previewPort: input.previewPort,
+          daytonaCredentialProfileId: input.daytonaCredentialProfileId,
+          gitCredentialProfileId: input.gitCredentialProfileId,
         },
       });
     },

@@ -1,5 +1,6 @@
 import { Schema } from "effect";
 import { IsoDateTime, TrimmedNonEmptyString } from "./baseSchemas";
+import { CredentialProfilesState } from "./credentials";
 import { KeybindingRule, ResolvedKeybindingsConfig } from "./keybindings";
 import { EditorId } from "./editor";
 import { ModelCapabilities } from "./model";
@@ -80,6 +81,7 @@ export const ServerConfig = Schema.Struct({
   providers: ServerProviders,
   availableEditors: Schema.Array(EditorId),
   settings: ServerSettings,
+  credentials: Schema.optional(CredentialProfilesState),
   daytona: Schema.optional(DaytonaServerStatus),
 });
 export type ServerConfig = typeof ServerConfig.Type;
@@ -96,6 +98,7 @@ export type ServerUpsertKeybindingResult = typeof ServerUpsertKeybindingResult.T
 export const ServerConfigUpdatedPayload = Schema.Struct({
   issues: ServerConfigIssues,
   settings: Schema.optional(ServerSettings),
+  credentials: Schema.optional(CredentialProfilesState),
 });
 export type ServerConfigUpdatedPayload = typeof ServerConfigUpdatedPayload.Type;
 

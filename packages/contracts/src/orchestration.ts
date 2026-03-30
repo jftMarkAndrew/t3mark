@@ -1,5 +1,6 @@
 import { Option, Schema, SchemaIssue, Struct } from "effect";
 import { ClaudeModelOptions, CodexModelOptions } from "./model";
+import { CredentialProfileId } from "./credentials";
 import {
   ApprovalRequestId,
   CheckpointRef,
@@ -178,6 +179,12 @@ export const ProjectDaytonaConfig = Schema.Struct({
     Schema.withDecodingDefault(() => null),
   ),
   previewPort: Schema.optional(Schema.NullOr(Schema.Int)).pipe(
+    Schema.withDecodingDefault(() => null),
+  ),
+  daytonaCredentialProfileId: Schema.optional(Schema.NullOr(CredentialProfileId)).pipe(
+    Schema.withDecodingDefault(() => null),
+  ),
+  gitCredentialProfileId: Schema.optional(Schema.NullOr(CredentialProfileId)).pipe(
     Schema.withDecodingDefault(() => null),
   ),
 });

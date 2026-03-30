@@ -49,6 +49,7 @@ import { createLogger } from "./logger";
 import { GitManager } from "./git/Services/GitManager.ts";
 import { TerminalManager } from "./terminal/Services/Manager.ts";
 import { DevHostRegistry } from "./fork/Services/DevHostRegistry.ts";
+import { CredentialProfilesService } from "./fork/Services/Credentials.ts";
 import { DaytonaService, resolveDaytonaServerStatus } from "./fork/Services/Daytona.ts";
 import { Jira } from "./fork/Services/Jira.ts";
 import { Keybindings } from "./keybindings";
@@ -243,6 +244,7 @@ export type ServerRuntimeServices =
   | GitCore
   | TerminalManager
   | DevHostRegistry
+  | CredentialProfilesService
   | DaytonaService
   | Jira
   | Keybindings
@@ -289,6 +291,7 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
   const gitManager = yield* GitManager;
   const terminalManager = yield* TerminalManager;
   const devHostRegistry = yield* DevHostRegistry;
+  const credentialProfilesService = yield* CredentialProfilesService;
   const daytonaService = yield* DaytonaService;
   const jira = yield* Jira;
   const keybindingsManager = yield* Keybindings;
@@ -669,6 +672,13 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
     }),
   ).pipe(Effect.forkIn(subscriptionsScope));
 
+  yield* Stream.runForEach(credentialProfilesService.streamChanges, (credentials) =>
+    pushBus.publishAll(WS_CHANNELS.serverConfigUpdated, {
+      issues: [],
+      credentials,
+    }),
+  ).pipe(Effect.forkIn(subscriptionsScope));
+
   yield* Stream.runForEach(providerRegistry.streamChanges, (providers) =>
     Effect.gen(function* () {
       yield* Ref.set(providersRef, providers);
@@ -986,6 +996,7 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
       case WS_METHODS.serverGetConfig: {
         const keybindingsConfig = yield* keybindingsManager.loadConfigState;
         const settings = yield* serverSettingsManager.getSettings;
+        const credentials = yield* credentialProfilesService.listProfiles;
         const providers = yield* Ref.get(providersRef);
         return {
           cwd,
@@ -995,7 +1006,8 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
           providers,
           availableEditors,
           settings,
-          daytona: resolveDaytonaServerStatus(),
+          credentials,
+          daytona: resolveDaytonaServerStatus(credentials),
         };
       }
 
@@ -1018,6 +1030,21 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
       case WS_METHODS.serverUpdateSettings: {
         const body = stripRequestTag(request.body);
         return yield* serverSettingsManager.updateSettings(body.patch);
+      }
+
+      case WS_METHODS.serverSaveCredentialProfile: {
+        const body = stripRequestTag(request.body);
+        return yield* credentialProfilesService.upsertProfile(body);
+      }
+
+      case WS_METHODS.serverDeleteCredentialProfile: {
+        const body = stripRequestTag(request.body);
+        return yield* credentialProfilesService.deleteProfile(body);
+      }
+
+      case WS_METHODS.serverValidateCredentialProfile: {
+        const body = stripRequestTag(request.body);
+        return yield* credentialProfilesService.validateProfile(body);
       }
 
       case WS_METHODS.serverGetJiraIssue: {
