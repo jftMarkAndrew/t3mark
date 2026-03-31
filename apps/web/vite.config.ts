@@ -7,6 +7,10 @@ import pkg from "./package.json" with { type: "json" };
 
 const port = Number(process.env.PORT ?? 5733);
 const sourcemapEnv = process.env.T3CODE_WEB_SOURCEMAP?.trim().toLowerCase();
+const daytonaMode = process.env.T3_DAYTONA_MODE?.trim() === "1";
+const publicWebHost = process.env.T3_PUBLIC_WEB_HOST?.trim() || undefined;
+const publicWebProtocol = process.env.T3_PUBLIC_WEB_PROTOCOL?.trim() || undefined;
+const publicWebPort = process.env.T3_PUBLIC_WEB_PORT?.trim() || undefined;
 
 const buildSourcemap =
   sourcemapEnv === "0" || sourcemapEnv === "false"
@@ -43,13 +47,24 @@ export default defineConfig({
   server: {
     port,
     strictPort: true,
-    hmr: {
-      // Explicit config so Vite's HMR WebSocket connects reliably
-      // inside Electron's BrowserWindow. Vite 8 uses console.debug for
-      // connection logs — enable "Verbose" in DevTools to see them.
-      protocol: "ws",
-      host: "localhost",
-    },
+    ...(daytonaMode ? { host: "0.0.0.0" } : {}),
+    ...(daytonaMode && publicWebHost ? { allowedHosts: [publicWebHost] } : {}),
+    hmr:
+      daytonaMode && publicWebHost
+        ? {
+            protocol: publicWebProtocol === "https" ? "wss" : "ws",
+            host: publicWebHost,
+            ...(publicWebPort && publicWebPort.length > 0
+              ? { clientPort: Number(publicWebPort) }
+              : {}),
+          }
+        : {
+            // Explicit config so Vite's HMR WebSocket connects reliably
+            // inside Electron's BrowserWindow. Vite 8 uses console.debug for
+            // connection logs — enable "Verbose" in DevTools to see them.
+            protocol: "ws",
+            host: "localhost",
+          },
   },
   build: {
     outDir: "dist",

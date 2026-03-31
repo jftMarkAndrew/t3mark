@@ -105,4 +105,32 @@ describe("detectProjectBootstrap", () => {
       },
     );
   });
+
+  it("detects full-stack Daytona defaults for the t3 monorepo", async () => {
+    await withTempProject(
+      {
+        "package.json": packageJson({
+          name: "@t3tools/monorepo",
+          scripts: {
+            "dev:server": "node scripts/dev-runner.ts dev:server",
+            "dev:web": "node scripts/dev-runner.ts dev:web",
+          },
+        }),
+        "bun.lock": "",
+      },
+      async (cwd) => {
+        const result = await detectProjectBootstrap({ cwd });
+        expect(result.detectedDaytonaLaunchMode).toBe("full-stack-web");
+        expect(result.detectedDaytonaInstallCommand).toBe(
+          "bun install --ignore-scripts --concurrent-scripts 1 --frozen-lockfile --no-progress",
+        );
+        expect(result.detectedDaytonaServerCommand).toBe(
+          "bun run dev:server -- --host 0.0.0.0 --port 3773",
+        );
+        expect(result.detectedDaytonaWebCommand).toBe("bun run dev:web");
+        expect(result.detectedDaytonaServerPort).toBe(3773);
+        expect(result.detectedDaytonaWebPort).toBe(5733);
+      },
+    );
+  });
 });

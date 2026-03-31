@@ -166,6 +166,9 @@ export type ProjectBootstrapConfig = typeof ProjectBootstrapConfig.Type;
 
 export const ProjectDaytonaConfig = Schema.Struct({
   enabled: Schema.optional(Schema.Boolean).pipe(Schema.withDecodingDefault(() => false)),
+  launchMode: Schema.optional(Schema.Literals(["single-process", "full-stack-web"])).pipe(
+    Schema.withDecodingDefault(() => "single-process"),
+  ),
   repoUrl: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)).pipe(
     Schema.withDecodingDefault(() => null),
   ),
@@ -178,9 +181,19 @@ export const ProjectDaytonaConfig = Schema.Struct({
   devCommand: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)).pipe(
     Schema.withDecodingDefault(() => null),
   ),
+  serverCommand: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)).pipe(
+    Schema.withDecodingDefault(() => null),
+  ),
+  webCommand: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)).pipe(
+    Schema.withDecodingDefault(() => null),
+  ),
   previewPort: Schema.optional(Schema.NullOr(Schema.Int)).pipe(
     Schema.withDecodingDefault(() => null),
   ),
+  serverPort: Schema.optional(Schema.NullOr(Schema.Int)).pipe(
+    Schema.withDecodingDefault(() => null),
+  ),
+  webPort: Schema.optional(Schema.NullOr(Schema.Int)).pipe(Schema.withDecodingDefault(() => null)),
   daytonaCredentialProfileId: Schema.optional(Schema.NullOr(CredentialProfileId)).pipe(
     Schema.withDecodingDefault(() => null),
   ),

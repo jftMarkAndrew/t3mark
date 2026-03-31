@@ -1512,13 +1512,14 @@ export default function Sidebar() {
                         ? "Daytona!"
                         : runningHost.status === "starting"
                           ? "Starting"
-                          : runningHost.url
+                          : (runningHost.primaryUrl ?? runningHost.url)
                             ? "Preview"
                             : "Daytona"
                       : `:${runningHost.port}`}
                   </MenuTrigger>
                   <MenuPopup align="end">
-                    {runningHost.launchKind === "daytona_preview" && runningHost.url ? (
+                    {runningHost.launchKind === "daytona_preview" &&
+                    (runningHost.primaryUrl ?? runningHost.url) ? (
                       <MenuItem
                         data-dev-host-control="true"
                         onPointerDownCapture={(event) => {
@@ -1528,8 +1529,9 @@ export default function Sidebar() {
                           event.preventDefault();
                           event.stopPropagation();
                           const api = readNativeApi();
-                          if (!api || !runningHost.url) return;
-                          void api.shell.openExternal(runningHost.url);
+                          const previewUrl = runningHost.primaryUrl ?? runningHost.url;
+                          if (!api || !previewUrl) return;
+                          void api.shell.openExternal(previewUrl);
                         }}
                       >
                         Open preview

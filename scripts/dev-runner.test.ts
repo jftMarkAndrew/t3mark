@@ -95,6 +95,38 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
       }),
     );
 
+    it.effect("preserves explicitly injected Daytona websocket and public web env", () =>
+      Effect.gen(function* () {
+        const env = yield* createDevRunnerEnv({
+          mode: "dev:web",
+          baseEnv: {
+            PORT: "5733",
+            VITE_WS_URL: "wss://backend.daytona.example/ws",
+            VITE_DEV_SERVER_URL: "https://web.daytona.example",
+            T3_DAYTONA_MODE: "1",
+            T3_PUBLIC_WEB_HOST: "web.daytona.example",
+            T3_PUBLIC_WEB_PROTOCOL: "https",
+            T3_PUBLIC_WEB_PORT: "443",
+          },
+          serverOffset: 0,
+          webOffset: 0,
+          t3Home: undefined,
+          authToken: undefined,
+          noBrowser: undefined,
+          autoBootstrapProjectFromCwd: undefined,
+          logWebSocketEvents: undefined,
+          host: undefined,
+          port: undefined,
+          devUrl: undefined,
+        });
+
+        assert.equal(env.PORT, "5733");
+        assert.equal(env.VITE_WS_URL, "wss://backend.daytona.example/ws");
+        assert.equal(env.VITE_DEV_SERVER_URL, "https://web.daytona.example");
+        assert.equal(env.T3_DAYTONA_MODE, "1");
+      }),
+    );
+
     it.effect("does not force websocket logging on in dev mode when unset", () =>
       Effect.gen(function* () {
         const env = yield* createDevRunnerEnv({

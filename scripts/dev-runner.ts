@@ -144,22 +144,35 @@ export function createDevRunnerEnv({
   devUrl,
 }: CreateDevRunnerEnvInput): Effect.Effect<NodeJS.ProcessEnv, never, Path.Path> {
   return Effect.gen(function* () {
-    const serverPort = port ?? BASE_SERVER_PORT + serverOffset;
-    const webPort = BASE_WEB_PORT + webOffset;
+    const inheritedServerPort = Number.parseInt(baseEnv.T3CODE_PORT ?? "", 10);
+    const inheritedWebPort = Number.parseInt(baseEnv.PORT ?? "", 10);
+    const serverPort =
+      port ??
+      (Number.isInteger(inheritedServerPort) && inheritedServerPort > 0
+        ? inheritedServerPort
+        : BASE_SERVER_PORT + serverOffset);
+    const webPort =
+      Number.isInteger(inheritedWebPort) && inheritedWebPort > 0
+        ? inheritedWebPort
+        : BASE_WEB_PORT + webOffset;
     const resolvedBaseDir = yield* resolveBaseDir(t3Home);
     const isDesktopMode = mode === "dev:desktop";
+    const explicitWsUrl = baseEnv.VITE_WS_URL?.trim();
+    const explicitDevServerUrl = baseEnv.VITE_DEV_SERVER_URL?.trim();
 
     const output: NodeJS.ProcessEnv = {
       ...baseEnv,
       PORT: String(webPort),
       ELECTRON_RENDERER_PORT: String(webPort),
-      VITE_DEV_SERVER_URL: devUrl?.toString() ?? `http://localhost:${webPort}`,
+      VITE_DEV_SERVER_URL:
+        devUrl?.toString() ?? explicitDevServerUrl ?? `http://localhost:${webPort}`,
       T3CODE_HOME: resolvedBaseDir,
     };
 
     if (!isDesktopMode) {
       output.T3CODE_PORT = String(serverPort);
-      output.VITE_WS_URL = `ws://localhost:${serverPort}`;
+      output.VITE_WS_URL =
+        explicitWsUrl && explicitWsUrl.length > 0 ? explicitWsUrl : `ws://localhost:${serverPort}`;
     } else {
       delete output.T3CODE_PORT;
       delete output.VITE_WS_URL;

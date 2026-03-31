@@ -24,6 +24,21 @@ export const ActiveDevHost = Schema.Struct({
   url: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)).pipe(
     Schema.withDecodingDefault(() => null),
   ),
+  primaryUrl: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)).pipe(
+    Schema.withDecodingDefault(() => null),
+  ),
+  serviceUrls: Schema.optional(
+    Schema.NullOr(
+      Schema.Struct({
+        web: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)).pipe(
+          Schema.withDecodingDefault(() => null),
+        ),
+        server: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)).pipe(
+          Schema.withDecodingDefault(() => null),
+        ),
+      }),
+    ),
+  ).pipe(Schema.withDecodingDefault(() => null)),
   workspaceId: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)).pipe(
     Schema.withDecodingDefault(() => null),
   ),
@@ -56,6 +71,21 @@ export const DevHostRegisterInput = Schema.Struct({
   url: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)).pipe(
     Schema.withDecodingDefault(() => null),
   ),
+  primaryUrl: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)).pipe(
+    Schema.withDecodingDefault(() => null),
+  ),
+  serviceUrls: Schema.optional(
+    Schema.NullOr(
+      Schema.Struct({
+        web: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)).pipe(
+          Schema.withDecodingDefault(() => null),
+        ),
+        server: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)).pipe(
+          Schema.withDecodingDefault(() => null),
+        ),
+      }),
+    ),
+  ).pipe(Schema.withDecodingDefault(() => null)),
   workspaceId: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)).pipe(
     Schema.withDecodingDefault(() => null),
   ),

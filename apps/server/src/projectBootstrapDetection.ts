@@ -27,12 +27,19 @@ const APP_PORT_BY_PACKAGE_NAME: ReadonlyArray<{ packageName: string; port: numbe
   { packageName: "nuxt", port: 3000 },
   { packageName: "nuxt3", port: 3000 },
 ];
+const T3TOOLS_MONOREPO_NAME = "@t3tools/monorepo";
+const T3TOOLS_PREVIEW_SAFE_BUN_INSTALL =
+  "bun install --ignore-scripts --concurrent-scripts 1 --frozen-lockfile --no-progress";
 
 interface PackageJsonLike {
   readonly name?: string | null;
   readonly scripts?: Record<string, string> | null;
   readonly dependencies?: Record<string, string> | null;
   readonly devDependencies?: Record<string, string> | null;
+}
+
+function isT3ToolsMonorepo(packageJson: PackageJsonLike | null): boolean {
+  return packageJson?.name === T3TOOLS_MONOREPO_NAME;
 }
 
 function isAngularProject(packageJson: PackageJsonLike | null): boolean {
@@ -121,15 +128,15 @@ function deriveDaytonaInstallCommand(
   packageManager: string | null,
   bootstrapInstallCommand: string | null,
 ): string | null {
-  if (packageJson?.name === "@t3tools/monorepo" && packageManager === "bun") {
-    return "bun install --filter './' --filter './apps/web' --filter './packages/contracts' --filter './packages/shared' --ignore-scripts";
+  if (isT3ToolsMonorepo(packageJson) && packageManager === "bun") {
+    return T3TOOLS_PREVIEW_SAFE_BUN_INSTALL;
   }
 
   return bootstrapInstallCommand;
 }
 
 function deriveDaytonaAppPort(packageJson: PackageJsonLike | null): number {
-  if (packageJson?.name === "@t3tools/monorepo") {
+  if (isT3ToolsMonorepo(packageJson)) {
     return 5733;
   }
   const explicitPort = detectExplicitScriptPort(packageJson);
@@ -148,6 +155,50 @@ function deriveDaytonaAppPort(packageJson: PackageJsonLike | null): number {
   }
 
   return 3000;
+}
+
+function deriveDaytonaLaunchMode(
+  packageJson: PackageJsonLike | null,
+): "single-process" | "full-stack-web" {
+  return isT3ToolsMonorepo(packageJson) ? "full-stack-web" : "single-process";
+}
+
+function deriveDaytonaServerCommand(
+  packageJson: PackageJsonLike | null,
+  packageManager: string | null,
+): string | null {
+  if (!isT3ToolsMonorepo(packageJson)) {
+    return null;
+  }
+
+  if (packageManager === "bun") {
+    return "bun run dev:server -- --host 0.0.0.0 --port 3773";
+  }
+
+  return null;
+}
+
+function deriveDaytonaWebCommand(
+  packageJson: PackageJsonLike | null,
+  packageManager: string | null,
+): string | null {
+  if (!isT3ToolsMonorepo(packageJson)) {
+    return null;
+  }
+
+  if (packageManager === "bun") {
+    return "bun run dev:web";
+  }
+
+  return null;
+}
+
+function deriveDaytonaServerPort(packageJson: PackageJsonLike | null): number | null {
+  return isT3ToolsMonorepo(packageJson) ? 3773 : null;
+}
+
+function deriveDaytonaWebPort(packageJson: PackageJsonLike | null): number | null {
+  return isT3ToolsMonorepo(packageJson) ? 5733 : null;
 }
 
 async function runGitCommand(cwd: string, args: ReadonlyArray<string>): Promise<string | null> {
@@ -238,6 +289,7 @@ export async function detectProjectBootstrap(
     ...bootstrap,
     detectedRepoUrl,
     detectedDefaultBranch,
+    detectedDaytonaLaunchMode: deriveDaytonaLaunchMode(packageJson),
     detectedDaytonaInstallCommand: deriveDaytonaInstallCommand(
       packageJson,
       bootstrap.detectedPackageManager,
@@ -247,6 +299,16 @@ export async function detectProjectBootstrap(
       packageJson,
       bootstrap.detectedPackageManager,
     ),
+    detectedDaytonaServerCommand: deriveDaytonaServerCommand(
+      packageJson,
+      bootstrap.detectedPackageManager,
+    ),
+    detectedDaytonaWebCommand: deriveDaytonaWebCommand(
+      packageJson,
+      bootstrap.detectedPackageManager,
+    ),
     detectedAppPort: deriveDaytonaAppPort(packageJson),
+    detectedDaytonaServerPort: deriveDaytonaServerPort(packageJson),
+    detectedDaytonaWebPort: deriveDaytonaWebPort(packageJson),
   };
 }

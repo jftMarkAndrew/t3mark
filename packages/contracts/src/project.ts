@@ -51,8 +51,13 @@ export const ProjectDetectBootstrapResult = Schema.Struct({
   detectedPackageManager: Schema.NullOr(BootstrapPackageManager),
   detectedRepoUrl: Schema.NullOr(TrimmedNonEmptyString),
   detectedDefaultBranch: Schema.NullOr(TrimmedNonEmptyString),
+  detectedDaytonaLaunchMode: Schema.NullOr(Schema.Literals(["single-process", "full-stack-web"])),
   detectedDaytonaInstallCommand: Schema.NullOr(TrimmedNonEmptyString),
   detectedDaytonaDevCommand: Schema.NullOr(TrimmedNonEmptyString),
+  detectedDaytonaServerCommand: Schema.NullOr(TrimmedNonEmptyString),
+  detectedDaytonaWebCommand: Schema.NullOr(TrimmedNonEmptyString),
   detectedAppPort: Schema.NullOr(PositiveInt),
+  detectedDaytonaServerPort: Schema.NullOr(PositiveInt),
+  detectedDaytonaWebPort: Schema.NullOr(PositiveInt),
 });
 export type ProjectDetectBootstrapResult = typeof ProjectDetectBootstrapResult.Type;

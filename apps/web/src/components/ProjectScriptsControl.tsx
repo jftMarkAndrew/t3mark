@@ -111,11 +111,16 @@ export interface NewProjectBootstrapInput {
 
 export interface NewProjectDaytonaInput {
   enabled: boolean;
+  launchMode: "single-process" | "full-stack-web";
   repoUrl: string | null;
   defaultBranch: string | null;
   installCommand: string | null;
   devCommand: string | null;
   previewPort: number | null;
+  serverCommand: string | null;
+  webCommand: string | null;
+  serverPort: number | null;
+  webPort: number | null;
   daytonaCredentialProfileId: string | null;
   gitCredentialProfileId: string | null;
 }
@@ -225,11 +230,18 @@ export default function ProjectScriptsControl({
     useState<BootstrapPackageManager | null>(null);
   const [bootstrapValidationError, setBootstrapValidationError] = useState<string | null>(null);
   const [daytonaEnabled, setDaytonaEnabled] = useState(false);
+  const [daytonaLaunchMode, setDaytonaLaunchMode] = useState<"single-process" | "full-stack-web">(
+    "single-process",
+  );
   const [daytonaRepoUrl, setDaytonaRepoUrl] = useState("");
   const [daytonaDefaultBranch, setDaytonaDefaultBranch] = useState("");
   const [daytonaInstallCommand, setDaytonaInstallCommand] = useState("");
   const [daytonaDevCommand, setDaytonaDevCommand] = useState("");
   const [daytonaPreviewPort, setDaytonaPreviewPort] = useState(String(DEFAULT_LOCALHOST_BASE_PORT));
+  const [daytonaServerCommand, setDaytonaServerCommand] = useState("");
+  const [daytonaWebCommand, setDaytonaWebCommand] = useState("");
+  const [daytonaServerPort, setDaytonaServerPort] = useState("3773");
+  const [daytonaWebPort, setDaytonaWebPort] = useState("5733");
   const [daytonaCredentialMode, setDaytonaCredentialMode] = useState<"default" | "profile">(
     "default",
   );
@@ -259,6 +271,12 @@ export default function ProjectScriptsControl({
     if (daytona?.repoUrl == null || daytona.repoUrl.trim().length === 0) {
       setDaytonaRepoUrl((current) => current || detected.detectedRepoUrl || "");
     }
+    if (
+      (daytona?.launchMode ?? "single-process") === "single-process" &&
+      detected.detectedDaytonaLaunchMode === "full-stack-web"
+    ) {
+      setDaytonaLaunchMode("full-stack-web");
+    }
     if (daytona?.defaultBranch == null || daytona.defaultBranch.trim().length === 0) {
       setDaytonaDefaultBranch((current) => current || detected.detectedDefaultBranch || "");
     }
@@ -275,6 +293,22 @@ export default function ProjectScriptsControl({
         current === String(DEFAULT_LOCALHOST_BASE_PORT) && detected.detectedAppPort
           ? String(detected.detectedAppPort)
           : current,
+      );
+    }
+    if (daytona?.serverCommand == null || daytona.serverCommand.trim().length === 0) {
+      setDaytonaServerCommand((current) => current || detected.detectedDaytonaServerCommand || "");
+    }
+    if (daytona?.webCommand == null || daytona.webCommand.trim().length === 0) {
+      setDaytonaWebCommand((current) => current || detected.detectedDaytonaWebCommand || "");
+    }
+    if (daytona?.serverPort == null && detected.detectedDaytonaServerPort) {
+      setDaytonaServerPort((current) =>
+        current === "3773" ? String(detected.detectedDaytonaServerPort) : current,
+      );
+    }
+    if (daytona?.webPort == null && detected.detectedDaytonaWebPort) {
+      setDaytonaWebPort((current) =>
+        current === "5733" ? String(detected.detectedDaytonaWebPort) : current,
       );
     }
   }, [bootstrapDetectionQuery.data, daytona, daytonaDialogOpen]);
@@ -443,6 +477,9 @@ export default function ProjectScriptsControl({
   const openDaytonaDialog = useCallback(() => {
     const detected = bootstrapDetectionQuery.data;
     setDaytonaEnabled(daytona?.enabled ?? false);
+    setDaytonaLaunchMode(
+      daytona?.launchMode ?? detected?.detectedDaytonaLaunchMode ?? "single-process",
+    );
     setDaytonaRepoUrl(daytona?.repoUrl ?? detected?.detectedRepoUrl ?? "");
     setDaytonaDefaultBranch(daytona?.defaultBranch ?? detected?.detectedDefaultBranch ?? "");
     setDaytonaInstallCommand(
@@ -452,6 +489,12 @@ export default function ProjectScriptsControl({
     setDaytonaPreviewPort(
       String(daytona?.previewPort ?? detected?.detectedAppPort ?? DEFAULT_LOCALHOST_BASE_PORT),
     );
+    setDaytonaServerCommand(daytona?.serverCommand ?? detected?.detectedDaytonaServerCommand ?? "");
+    setDaytonaWebCommand(daytona?.webCommand ?? detected?.detectedDaytonaWebCommand ?? "");
+    setDaytonaServerPort(
+      String(daytona?.serverPort ?? detected?.detectedDaytonaServerPort ?? 3773),
+    );
+    setDaytonaWebPort(String(daytona?.webPort ?? detected?.detectedDaytonaWebPort ?? 5733));
     setDaytonaCredentialMode(daytona?.daytonaCredentialProfileId ? "profile" : "default");
     setDaytonaCredentialProfileId(daytona?.daytonaCredentialProfileId ?? "__default__");
     setGitCredentialMode(daytona?.gitCredentialProfileId ? "profile" : "default");
@@ -468,6 +511,10 @@ export default function ProjectScriptsControl({
       const nextInstallCommand = daytonaInstallCommand.trim();
       const nextDevCommand = daytonaDevCommand.trim();
       const parsedPreviewPort = Number.parseInt(daytonaPreviewPort, 10);
+      const nextServerCommand = daytonaServerCommand.trim();
+      const nextWebCommand = daytonaWebCommand.trim();
+      const parsedServerPort = Number.parseInt(daytonaServerPort, 10);
+      const parsedWebPort = Number.parseInt(daytonaWebPort, 10);
 
       if (daytonaEnabled && nextRepoUrl.length === 0) {
         setDaytonaValidationError(
@@ -481,19 +528,52 @@ export default function ProjectScriptsControl({
         );
         return;
       }
-      if (!Number.isInteger(parsedPreviewPort) || parsedPreviewPort <= 0) {
-        setDaytonaValidationError("App port must be a positive integer.");
-        return;
+      if (daytonaLaunchMode === "single-process") {
+        if (!Number.isInteger(parsedPreviewPort) || parsedPreviewPort <= 0) {
+          setDaytonaValidationError("App port must be a positive integer.");
+          return;
+        }
+      } else {
+        if (nextServerCommand.length === 0) {
+          setDaytonaValidationError("Server command is required in full-stack mode.");
+          return;
+        }
+        if (nextWebCommand.length === 0) {
+          setDaytonaValidationError("Web command is required in full-stack mode.");
+          return;
+        }
+        if (!Number.isInteger(parsedServerPort) || parsedServerPort <= 0) {
+          setDaytonaValidationError("Server port must be a positive integer.");
+          return;
+        }
+        if (!Number.isInteger(parsedWebPort) || parsedWebPort <= 0) {
+          setDaytonaValidationError("Web port must be a positive integer.");
+          return;
+        }
       }
 
       setDaytonaValidationError(null);
       await onSaveDaytona({
         enabled: daytonaEnabled,
+        launchMode: daytonaLaunchMode,
         repoUrl: nextRepoUrl.length > 0 ? nextRepoUrl : null,
         defaultBranch: nextDefaultBranch.length > 0 ? nextDefaultBranch : null,
         installCommand: nextInstallCommand.length > 0 ? nextInstallCommand : null,
-        devCommand: nextDevCommand.length > 0 ? nextDevCommand : null,
-        previewPort: parsedPreviewPort,
+        devCommand:
+          daytonaLaunchMode === "single-process" && nextDevCommand.length > 0
+            ? nextDevCommand
+            : null,
+        previewPort: daytonaLaunchMode === "single-process" ? parsedPreviewPort : null,
+        serverCommand:
+          daytonaLaunchMode === "full-stack-web" && nextServerCommand.length > 0
+            ? nextServerCommand
+            : null,
+        webCommand:
+          daytonaLaunchMode === "full-stack-web" && nextWebCommand.length > 0
+            ? nextWebCommand
+            : null,
+        serverPort: daytonaLaunchMode === "full-stack-web" ? parsedServerPort : null,
+        webPort: daytonaLaunchMode === "full-stack-web" ? parsedWebPort : null,
         daytonaCredentialProfileId:
           daytonaCredentialMode === "profile" && daytonaCredentialProfileId !== "__default__"
             ? daytonaCredentialProfileId
@@ -506,16 +586,21 @@ export default function ProjectScriptsControl({
       setDaytonaDialogOpen(false);
     },
     [
+      daytonaLaunchMode,
       daytonaCredentialMode,
       daytonaDefaultBranch,
       daytonaCredentialProfileId,
       daytonaDevCommand,
       daytonaEnabled,
+      daytonaServerCommand,
+      daytonaServerPort,
       gitCredentialMode,
       gitCredentialProfileId,
       daytonaInstallCommand,
       daytonaPreviewPort,
       daytonaRepoUrl,
+      daytonaWebCommand,
+      daytonaWebPort,
       onSaveDaytona,
     ],
   );
@@ -714,6 +799,31 @@ export default function ProjectScriptsControl({
                 </p>
               </div>
               <div className="space-y-1.5">
+                <Label htmlFor="daytona-launch-mode">Launch mode</Label>
+                <Select
+                  value={daytonaLaunchMode}
+                  onValueChange={(value) =>
+                    setDaytonaLaunchMode(
+                      value === "full-stack-web" ? "full-stack-web" : "single-process",
+                    )
+                  }
+                >
+                  <SelectTrigger id="daytona-launch-mode" className="w-full">
+                    <SelectValue>
+                      {daytonaLaunchMode === "full-stack-web" ? "Full-stack web" : "Single process"}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectPopup>
+                    <SelectItem value="single-process">Single process</SelectItem>
+                    <SelectItem value="full-stack-web">Full-stack web</SelectItem>
+                  </SelectPopup>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Use full-stack web for separate backend and frontend processes, or single process
+                  for simpler apps.
+                </p>
+              </div>
+              <div className="space-y-1.5">
                 <Label htmlFor="daytona-install-command">Install command override</Label>
                 <Input
                   id="daytona-install-command"
@@ -723,37 +833,103 @@ export default function ProjectScriptsControl({
                   }
                   onChange={(event) => setDaytonaInstallCommand(event.target.value)}
                 />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="daytona-dev-command">Dev command</Label>
-                <Input
-                  id="daytona-dev-command"
-                  value={daytonaDevCommand}
-                  placeholder={
-                    bootstrapDetectionQuery.data?.detectedDaytonaDevCommand ?? "bun run dev"
-                  }
-                  onChange={(event) => setDaytonaDevCommand(event.target.value)}
-                />
                 <p className="text-xs text-muted-foreground">
-                  Runs normally inside Daytona. Angular apps should bind to `0.0.0.0` for remote
-                  previews. The app port below is only used to open the preview.
+                  Daytona can use a preview-safe install command here. For heavy Bun workspaces,
+                  that may skip local tooling scripts to keep sandbox memory use down.
                 </p>
               </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="daytona-preview-port">App port</Label>
-                <Input
-                  id="daytona-preview-port"
-                  inputMode="numeric"
-                  value={daytonaPreviewPort}
-                  placeholder={String(
-                    bootstrapDetectionQuery.data?.detectedAppPort ?? DEFAULT_LOCALHOST_BASE_PORT,
-                  )}
-                  onChange={(event) => setDaytonaPreviewPort(event.target.value)}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Daytona uses this port to generate the preview URL after your app starts.
-                </p>
-              </div>
+              {daytonaLaunchMode === "single-process" ? (
+                <>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="daytona-dev-command">Dev command</Label>
+                    <Input
+                      id="daytona-dev-command"
+                      value={daytonaDevCommand}
+                      placeholder={
+                        bootstrapDetectionQuery.data?.detectedDaytonaDevCommand ?? "bun run dev"
+                      }
+                      onChange={(event) => setDaytonaDevCommand(event.target.value)}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Runs normally inside Daytona. Angular apps should bind to `0.0.0.0` for remote
+                      previews.
+                    </p>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="daytona-preview-port">App port</Label>
+                    <Input
+                      id="daytona-preview-port"
+                      inputMode="numeric"
+                      value={daytonaPreviewPort}
+                      placeholder={String(
+                        bootstrapDetectionQuery.data?.detectedAppPort ??
+                          DEFAULT_LOCALHOST_BASE_PORT,
+                      )}
+                      onChange={(event) => setDaytonaPreviewPort(event.target.value)}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Daytona uses this port to generate the preview URL after your app starts.
+                    </p>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="daytona-server-command">Server command</Label>
+                    <Input
+                      id="daytona-server-command"
+                      value={daytonaServerCommand}
+                      placeholder={
+                        bootstrapDetectionQuery.data?.detectedDaytonaServerCommand ??
+                        "bun run dev:server -- --host 0.0.0.0 --port 3773"
+                      }
+                      onChange={(event) => setDaytonaServerCommand(event.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="daytona-server-port">Server port</Label>
+                    <Input
+                      id="daytona-server-port"
+                      inputMode="numeric"
+                      value={daytonaServerPort}
+                      placeholder={String(
+                        bootstrapDetectionQuery.data?.detectedDaytonaServerPort ?? 3773,
+                      )}
+                      onChange={(event) => setDaytonaServerPort(event.target.value)}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Daytona waits for this backend port first, then injects its remote URL into
+                      the frontend.
+                    </p>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="daytona-web-command">Web command</Label>
+                    <Input
+                      id="daytona-web-command"
+                      value={daytonaWebCommand}
+                      placeholder={
+                        bootstrapDetectionQuery.data?.detectedDaytonaWebCommand ?? "bun run dev:web"
+                      }
+                      onChange={(event) => setDaytonaWebCommand(event.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="daytona-web-port">Web port</Label>
+                    <Input
+                      id="daytona-web-port"
+                      inputMode="numeric"
+                      value={daytonaWebPort}
+                      placeholder={String(
+                        bootstrapDetectionQuery.data?.detectedDaytonaWebPort ?? 5733,
+                      )}
+                      onChange={(event) => setDaytonaWebPort(event.target.value)}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      This becomes the primary preview URL shown in the UI.
+                    </p>
+                  </div>
+                </>
+              )}
               <div className="space-y-1.5">
                 <Label htmlFor="daytona-credential-profile">Daytona credentials</Label>
                 <RadioGroup

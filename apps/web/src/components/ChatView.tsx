@@ -812,21 +812,28 @@ export default function ChatView({ threadId }: ChatViewProps) {
     if (activeDaytonaHost?.status === "starting") {
       return activeDaytonaHost.statusDetail ?? "Launching Daytona preview.";
     }
-    if (activeDaytonaHost?.status === "running" && activeDaytonaHost.url) {
-      return activeDaytonaHost.url;
+    if (
+      activeDaytonaHost?.status === "running" &&
+      (activeDaytonaHost.primaryUrl ?? activeDaytonaHost.url)
+    ) {
+      return activeDaytonaHost.primaryUrl ?? activeDaytonaHost.url ?? "Daytona preview ready.";
     }
     return "Launch or open the Daytona preview for this thread.";
   }, [
     activeDaytonaHost?.lastError,
     activeDaytonaHost?.status,
     activeDaytonaHost?.statusDetail,
+    activeDaytonaHost?.primaryUrl,
     activeDaytonaHost?.url,
   ]);
   const daytonaLabel = useMemo(() => {
     if (isLaunchingDaytona) {
       return "Launching";
     }
-    if (activeDaytonaHost?.status === "running" && activeDaytonaHost.url) {
+    if (
+      activeDaytonaHost?.status === "running" &&
+      (activeDaytonaHost.primaryUrl ?? activeDaytonaHost.url)
+    ) {
       return "Preview";
     }
     if (activeDaytonaHost?.status === "starting") {
@@ -845,6 +852,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
   }, [
     activeDaytonaHost?.status,
     activeDaytonaHost?.statusDetail,
+    activeDaytonaHost?.primaryUrl,
     activeDaytonaHost?.url,
     isLaunchingDaytona,
   ]);
@@ -887,7 +895,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
       status: activeDaytonaHost.status,
       statusDetail: activeDaytonaHost.statusDetail ?? null,
       lastError: activeDaytonaHost.lastError ?? null,
-      url: activeDaytonaHost.url ?? null,
+      url: activeDaytonaHost.primaryUrl ?? activeDaytonaHost.url ?? null,
     });
 
     toastManager.add({
@@ -903,6 +911,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
     activeDaytonaHost?.lastError,
     activeDaytonaHost?.status,
     activeDaytonaHost?.statusDetail,
+    activeDaytonaHost?.primaryUrl,
     activeDaytonaHost?.url,
     activeThread?.id,
   ]);
@@ -1941,8 +1950,11 @@ export default function ChatView({ threadId }: ChatViewProps) {
     const api = readNativeApi();
     if (!api || !activeThreadId) return;
 
-    if (activeDaytonaHost?.status === "running" && activeDaytonaHost.url) {
-      await api.shell.openExternal(activeDaytonaHost.url);
+    if (
+      activeDaytonaHost?.status === "running" &&
+      (activeDaytonaHost.primaryUrl ?? activeDaytonaHost.url)
+    ) {
+      await api.shell.openExternal(activeDaytonaHost.primaryUrl ?? activeDaytonaHost.url!);
       return;
     }
 
@@ -1962,7 +1974,13 @@ export default function ChatView({ threadId }: ChatViewProps) {
         setIsLaunchingDaytona(false);
       }, 250);
     }
-  }, [activeDaytonaHost?.status, activeDaytonaHost?.url, activeThreadId, queryClient]);
+  }, [
+    activeDaytonaHost?.primaryUrl,
+    activeDaytonaHost?.status,
+    activeDaytonaHost?.url,
+    activeThreadId,
+    queryClient,
+  ]);
   const launchProjectScript = useCallback(
     async (script: ProjectScript) => {
       if (script.runAsLocalhostLauncher) {
@@ -2175,11 +2193,16 @@ export default function ChatView({ threadId }: ChatViewProps) {
         projectId: activeProject.id,
         daytona: {
           enabled: input.enabled,
+          launchMode: input.launchMode,
           repoUrl: input.repoUrl,
           defaultBranch: input.defaultBranch,
           installCommand: input.installCommand,
           devCommand: input.devCommand,
           previewPort: input.previewPort,
+          serverCommand: input.serverCommand,
+          webCommand: input.webCommand,
+          serverPort: input.serverPort,
+          webPort: input.webPort,
           daytonaCredentialProfileId: input.daytonaCredentialProfileId,
           gitCredentialProfileId: input.gitCredentialProfileId,
         },
